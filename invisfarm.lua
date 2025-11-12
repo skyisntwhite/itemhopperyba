@@ -598,7 +598,6 @@ local function PlayAnimation(HumanoidCharacter, AnimationID, AnimationSpeed, Tim
 end
 
 local function GoInvisible()
-    -- safe-guards & waits
     if not Player or not Player.Character then return end
     local char = Player.Character
     local humanoid = char:FindFirstChildOfClass("Humanoid")
@@ -611,22 +610,19 @@ local function GoInvisible()
         until humanoid and hrp
     end
 
-    -- keep snapshots of some properties we may touch
     local prevDisplayType = humanoid.DisplayDistanceType
     local prevNameDistance = humanoid.NameDisplayDistance or 100
     local prevAutoRotate = humanoid.AutoRotate
 
-    -- hide local HUD (same as original)
     local HUD = PlayerGui:FindFirstChild("HUD")
     if HUD then HUD.Parent = nil end
 
-    -- play invis animation briefly (does not forcibly destroy other animators)
     local ok, animTrack = pcall(function()
         local a = Instance.new("Animation")
         a.AnimationId = "rbxassetid://7189062263"
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hum then return nil end
-        local animator = hum:FindFirstChildOfClass("Animator") or hum:FindFirstChildOfClass("Humanoid") -- fallback
+        local animator = hum:FindFirstChildOfClass("Animator") or hum:FindFirstChildOfClass("Humanoid")
         if not animator then return nil end
         local track = animator:LoadAnimation(a)
         track.Priority = Enum.AnimationPriority.Action4
@@ -679,7 +675,6 @@ task.spawn(function()
             for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
                 local id = track.Animation and track.Animation.AnimationId
                 if id then
-                    -- Do NOT stop the invis animation
                     if id ~= "rbxassetid://7189062263" then
                         -- Pickups + generic idle re-sync animations get stopped
                         pcall(function() track:Stop() end)
