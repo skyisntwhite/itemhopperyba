@@ -290,21 +290,25 @@ local function GoInvisible()
     if HUD then HUD.Parent = PlayerGui end
 end
 
-task.spawn(function()
-    while task.wait(0.15) do
-        if Character then
-            local hum = Character:FindFirstChildOfClass("Humanoid")
-            if hum then
-                for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
-                    local id = track.Animation and track.Animation.AnimationId
-                    if id and id ~= "rbxassetid://7189062263" then
-                        pcall(function() track:Stop() end)
+--[[
+    -- ANIMATION-STOPPING LOOP
+
+    task.spawn(function()
+        while task.wait(0.15) do
+            if Character then
+                local hum = Character:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
+                        local id = track.Animation and track.Animation.AnimationId
+                        if id and id ~= "rbxassetid://7189062263" then
+                            pcall(function() track:Stop() end)
+                        end
                     end
                 end
             end
         end
-    end
-end)
+    end)
+]]
 
 -- cream/main func
 ToggleNoclip(true)
