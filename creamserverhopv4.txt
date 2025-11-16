@@ -1,0 +1,425 @@
+-- YBA Cream Mass Killer | Auto Server Hop Edition
+-- by einsteinian
+-- v4
+
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+
+local Player = Players.LocalPlayer
+repeat 
+    task.wait()
+    Player = Players.LocalPlayer
+until Player
+
+print("Player object found. Waiting for Character...")
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local SafeZone = CFrame.new(978, -42, -49) -- Defined globally for loop access
+
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+local RemoteEvent = Character:WaitForChild("RemoteEvent")
+local RemoteFunction = Character:WaitForChild("RemoteFunction")
+
+print("Loaded and Character is ready.")
+
+Player.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+    HumanoidRootPart = newChar:WaitForChild("HumanoidRootPart")
+    RemoteEvent = newChar:WaitForChild("RemoteEvent")
+    RemoteFunction = newChar:WaitForChild("RemoteFunction")
+    print("New character loaded, remotes re-established.")
+end)
+
+
+getgenv().Enabled = true
+getgenv().Whitelisted = {
+    "JohnDoe321",
+    "JaneDoe123"
+} -- (Case-Sensitive)
+
+
+-- YBA Mod Detection // Ban Prevention
+Players.PlayerAdded:Connect(function(Plr)
+    if Plr:IsInGroup(3194064) then
+        Player:Kick(`Kicked you as a safety measure; a mod joined your game ({Plr.Name}).`)
+    end
+end)
+
+for _, Plr in Players:GetPlayers() do
+    if Plr:IsInGroup(3194064) then
+        Player:Kick(`Kicked you as a safety measure; a mod joined your game ({Plr.Name}).`)
+    end
+end
+
+-- Anti-Kick / Error Teleport
+game:GetService("CoreGui").DescendantAdded:Connect(function(child)
+    if child.Name == "ErrorPrompt" then
+        local GrabError = child:FindFirstChild("ErrorMessage", true)
+        repeat task.wait() until GrabError.Text ~= "Label"
+        local Reason = GrabError.Text
+        if Reason:match("kick") or Reason:match("You") or Reason:match("conn") or Reason:match("rejoin") then
+            TeleportService:Teleport(2809202155, Player)
+        end
+    end
+end)
+
+if not PlayerGui:FindFirstChild("HUD") then
+    local HUD = ReplicatedStorage.Objects.HUD:Clone()
+    HUD.Parent = PlayerGui
+end
+
+RemoteEvent:FireServer("PressedPlay")
+
+task.spawn(function()
+    wait(2)
+    pcall(function()
+        if PlayerGui:FindFirstChild("LoadingScreen1") then
+            PlayerGui.LoadingScreen1:Destroy()
+        end
+    end)
+    pcall(function()
+        if PlayerGui:FindFirstChild("LoadingScreen") then
+            PlayerGui.LoadingScreen:Destroy()
+        end
+    end)
+    pcall(function()
+        if workspace:FindFirstChild("LoadingScreen") and workspace.LoadingScreen:FindFirstChild("Song") then
+            workspace.LoadingScreen.Song:Destroy()
+        end
+    end)
+    pcall(function()
+        if game.Lighting:FindFirstChild("DepthOfField") then
+            game.Lighting.DepthOfField:Destroy()
+        end
+    end)
+end)
+
+local function GetCharacter(Part)
+    if not Character then return nil end
+    if not Part then
+        return Character
+    elseif typeof(Part) == "string" then
+        return Character:FindFirstChild(Part)
+    end
+    return nil
+end
+
+local function TeleportTo(Position)
+    if HumanoidRootPart then
+        local PositionType = typeof(Position)
+        if PositionType == "CFrame" then
+            HumanoidRootPart.CFrame = Position
+        end
+    end
+end
+
+local function ToggleNoclip(Value)
+    if not Character then return end
+    for _, Child in pairs(Character:GetDescendants()) do
+        if Child:IsA("BasePart") and Child.CanCollide == not Value then
+            Child.CanCollide = Value
+        end
+    end
+end
+
+-- serverhop
+local PlaceId = game.PlaceId
+local JobId = game.JobId
+local SaveFile = "VisitedServers.json"
+local Visited = {}
+
+pcall(function()
+    Visited = HttpService:JSONDecode(readfile(SaveFile))
+end)
+
+if not table.find(Visited, JobId) then
+    table.insert(Visited, JobId)
+    pcall(function()
+        writefile(SaveFile, HttpService:JSONEncode(Visited))
+    end)
+end
+
+local VisitedServersCache = {}
+pcall(function()
+    local cached = readfile("VisitedServersCache.json")
+    VisitedServersCache = HttpService:JSONDecode(cached)
+end)
+
+local function ServerHop()
+    local MaxRetries = 8
+    local Attempt = 0
+
+    local function FetchServers(cursor)
+        local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Asc&limit=100"):format(PlaceId)
+        if cursor then
+            url = url .. "&cursor=" .. cursor
+        end
+        local ok, result = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet(url))
+        end)
+        return ok and result or nil
+    end
+
+    while Attempt < MaxRetries do
+        Attempt += 1
+        local data = FetchServers()
+
+        if data and data.data then
+            local candidates = {}
+            for _, server in ipairs(data.data) do
+                if server.id ~= JobId and server.playing < server.maxPlayers and not VisitedServersCache[server.id] then
+                    table.insert(candidates, server)
+                end
+            end
+
+            if #candidates > 0 then
+                -- HIGH POPULATION PRIORITY
+                table.sort(candidates, function(a, b)
+                    return a.playing > b.playing
+                end)
+
+                local target = candidates[1]
+                VisitedServersCache[target.id] = true
+                pcall(function()
+                    writefile("VisitedServersCache.json", HttpService:JSONEncode(VisitedServersCache))
+                end)
+
+                print(("[ServerHop] Joining high-population server %s (%d/%d players)"):format(target.id, target.playing, target.maxPlayers))
+                TeleportService:TeleportToPlaceInstance(PlaceId, target.id, Player)
+                task.wait(3)
+                return
+            end
+        end
+        task.wait(1.2)
+    end
+
+    print("[ServerHop] No suitable servers found – resetting cache.")
+    VisitedServersCache = {}
+    pcall(function()
+        writefile("VisitedServersCache.json", HttpService:JSONEncode(VisitedServersCache))
+    end)
+
+    task.wait(1.2)
+    TeleportService:Teleport(PlaceId, Player)
+end
+
+
+local UzuKeeIsRetardedAndDoesntKnowHowToMakeAnAntiCheatOnTheServerSideAlsoVexStfuIKnowTheCodeIsBadYouDontNeedToTellMe = "  ___XP DE KEY"
+
+local oldNc
+oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local Method = getnamecallmethod()
+    local Args = {...}
+    if not checkcaller() and rawequal(self.Name, "Returner") and rawequal(Args[1], "idklolbrah2de") then
+        return UzuKeeIsRetardedAndDoesntKnowHowToMakeAnAntiCheatOnTheServerSideAlsoVexStfuIKnowTheCodeIsBadYouDontNeedToTellMe
+    end
+    return oldNc(self, ...)
+end))
+
+local TPBypass
+TPBypass = hookfunction(getrawmetatable(game).__namecall, newcclosure(function(self, ...)
+    local args = { ... }
+    if self.Name == "Returner" and args[1] == "idklolbrah2de" then
+        return "  ___XP DE KEY"
+    end
+    return TPBypass(self, ...)
+end))
+
+
+local function GoInvisible()
+    if not Player or not Character then return end
+    local humanoid = Character:FindFirstChildOfClass("Humanoid")
+    local hrp = Character:FindFirstChild("HumanoidRootPart")
+
+    if not humanoid or not hrp then return end
+
+    local prevAutoRotate = humanoid.AutoRotate
+    local HUD = PlayerGui:FindFirstChild("HUD")
+    if HUD then HUD.Parent = nil end
+
+    local ok, animTrack = pcall(function()
+        local a = Instance.new("Animation")
+        a.AnimationId = "rbxassetid://7189062263"
+        local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid
+        if not animator then return nil end
+        local track = animator:LoadAnimation(a)
+        track.Priority = Enum.AnimationPriority.Action4
+        track:Play()
+        track:AdjustSpeed(0)
+        track.TimePosition = 5
+        return track
+    end)
+
+    pcall(function() Player.Character = nil end)
+    if ok and animTrack then
+        pcall(function() animTrack:Stop() end)
+    end
+    pcall(function() Player.Character = Character end)
+    
+    task.wait(0.03)
+    if hrp and hrp.Parent then
+        pcall(function() hrp.CFrame = hrp.CFrame end)
+    end
+
+    local existing = Character:FindFirstChild("InvisibilityHighlight")
+    if existing then pcall(function() existing:Destroy() end) end
+    
+    local Highlight = Instance.new("Highlight")
+    Highlight.Name = "InvisibilityHighlight"
+    Highlight.Parent = Character
+    Highlight.Enabled = true
+
+    pcall(function()
+        humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+        humanoid.NameDisplayDistance = 0
+    end)
+
+    pcall(function()
+        humanoid.AutoRotate = prevAutoRotate
+    end)
+
+    if HUD then HUD.Parent = PlayerGui end
+end
+
+task.spawn(function()
+    while task.wait(0.15) do
+        if Character then
+            local hum = Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
+                    local id = track.Animation and track.Animation.AnimationId
+                    if id and id ~= "rbxassetid://7189062263" then
+                        pcall(function() track:Stop() end)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- cream/main func
+ToggleNoclip(true)
+
+local function FireInputRemote(key)
+    pcall(function()
+        if Character and RemoteEvent then
+            RemoteEvent:FireServer("InputBegan", {["Input"] = key})
+        end
+    end)
+    pcall(function()
+        if Character and RemoteEvent then
+            RemoteEvent:FireServer("Input", { Key = tostring(key.Name or key) })
+        end
+    end)
+end
+
+local function FindStand()
+    if Player.Character then
+        for _, v in ipairs(Player.Character:GetChildren()) do
+            if v:IsA("Model") then
+                local nm = (v.Name or ""):lower()
+                if nm:find("stand") then return v end
+            end
+        end
+    end
+    for _, v in ipairs(Workspace:GetChildren()) do
+        if v:IsA("Model") then
+            local nm = (v.Name or ""):lower()
+            if nm:find("stand") then return v end
+        end
+    end
+    return nil
+end
+
+local function EnsureStandSummoned(timeout)
+    timeout = timeout or 3
+    local start = tick()
+
+    task.spawn(function()
+        FireInputRemote(Enum.KeyCode.Q)
+    end)
+
+    task.wait(0.15)
+    if RemoteFunction then
+        RemoteFunction:InvokeServer("ToggleStand", "Toggle")
+    end
+    
+    while tick() - start < timeout do
+        if FindStand() then
+            return true
+        end
+        task.wait(0.12)
+    end
+    return false
+end
+
+local function StartMassacreCycle()
+    local Duration = 60
+    
+    print("[Cream] Teleporting to safe zone and going invisible...")
+    pcall(TeleportTo, SafeZone) -- Call the existing TeleportTo function
+    task.wait(0.5) -- Wait for teleport to settle
+    pcall(GoInvisible) -- Call the existing GoInvisible function
+    print("[Cream] Initialization complete.")
+	
+    if not Character or not RemoteEvent or not RemoteFunction then
+        print("Character or remotes not found, skipping cycle.")
+        return
+    end
+
+    local summoned = EnsureStandSummoned(3)
+    if not summoned then
+        task.wait(0.25)
+        summoned = EnsureStandSummoned(3)
+    end
+
+    print("[Cream] Massacre cycle started. Stand summoned:", tostring(summoned))
+
+    local loopStart = tick()
+    while getgenv().Enabled and Player.Character and tick() - loopStart < Duration do
+        task.wait(0.12)
+            for _, Plr in ipairs(Players:GetPlayers()) do
+                if Plr ~= Player and not table.find(getgenv().Whitelisted, Plr.Name) then
+                    pcall(function()
+                        if Plr.Character and Plr.Character.PrimaryPart and HumanoidRootPart then
+                            Plr.Character.PrimaryPart.CFrame = HumanoidRootPart.CFrame + HumanoidRootPart.CFrame.LookVector * 2
+                        end
+                    end)
+                end
+            end
+			
+        task.spawn(function()
+            pcall(function() FireInputRemote(Enum.KeyCode.G) end) -- Dark Space
+            pcall(function() FireInputRemote(Enum.KeyCode.T) end) -- Devastation
+            pcall(function() FireInputRemote(Enum.KeyCode.Y) end) -- Madness Sorrow
+            pcall(function() FireInputRemote(Enum.KeyCode.X) end) -- Void Surprise
+        end)
+    end
+
+    print("[Cream] Cycle complete – preparing to ServerHop.")
+    if not table.find(Visited, JobId) then
+        table.insert(Visited, JobId)
+        pcall(function() writefile(SaveFile, HttpService:JSONEncode(Visited)) end)
+    end
+
+    task.wait(0.4)
+    ServerHop()
+end
+
+-- loop
+-- This loop will repeatedly run the cycle.
+task.spawn(function()
+    while getgenv().Enabled do
+        StartMassacreCycle()
+        task.wait(1)
+    end
+end)
