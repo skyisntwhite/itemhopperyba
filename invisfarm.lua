@@ -3,6 +3,7 @@
 -- v13: added webhook for money + lucky arrow count
 -- v14: webhook system now works properly
 -- v19: invisible now actually works
+repeat task.wait(0.25) until game:IsLoaded()
 local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 
