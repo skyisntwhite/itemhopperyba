@@ -13,11 +13,6 @@ local HttpService = game:GetService("HttpService")
 local PlayerGui = Player:WaitForChild("PlayerGui")
 local Money = nil
 
--- Set your webhook URL
-local WebhookURL = "https://discord.com/api/webhooks/914827848492134450/OWOIHOOwApv6Sb-X5pndnznZVOptkCEE_ZqET5U6yUVeaqzjKbtdeXRPd6faxwoInu8J" -- e.g. "https://discord.com/api/webhooks/..."
-local LastSendFile = "webhook_lastsend.txt"
-local SendInterval = 900 -- 15 minutes in seconds
-
 local function UpdateMoneyRef()
     if Player and Player:FindFirstChild("PlayerStats") then
         Money = Player.PlayerStats:FindFirstChild("Money")
