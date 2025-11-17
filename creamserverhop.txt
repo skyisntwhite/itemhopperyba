@@ -348,10 +348,6 @@ local function EnsureStandSummoned(timeout)
     timeout = timeout or 3
     local start = tick()
 
-    task.spawn(function()
-        FireInputRemote(Enum.KeyCode.Q)
-    end)
-
     task.wait(0.15)
     if RemoteFunction then
         RemoteFunction:InvokeServer("ToggleStand", "Toggle")
@@ -367,7 +363,7 @@ local function EnsureStandSummoned(timeout)
 end
 
 local function StartMassacreCycle()
-    local Duration = 60
+    local Duration = 45
     
     print("[Cream] Teleporting to safe zone and going invisible...")
     pcall(TeleportTo, SafeZone) -- Call the existing TeleportTo function
@@ -427,3 +423,4 @@ task.spawn(function()
         task.wait(1)
     end
 end)
+
