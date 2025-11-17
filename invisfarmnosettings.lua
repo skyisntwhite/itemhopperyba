@@ -1,10 +1,36 @@
 -- einsteinian and copilot(mostworks oml)
--- v1: invis added
--- v13: added webhook for money + lucky arrow count
--- v14: webhook system now works properly
--- v19: invisible now actually works
--- howto: pair with settings
+-- v21: Github Loadstring Support Added
 
+local Config = getgenv().YBAFarmSettings or {
+    WebhookURL = "",
+    SendInterval = 900,
+    BuyLucky = true,
+    AutoSell = true,
+    SellItems = {
+        ["Gold Coin"] = true, ["Rokakaka"] = true, ["Pure Rokakaka"] = true,
+        ["Mysterious Arrow"] = true, ["Diamond"] = true, ["Ancient Scroll"] = true,
+        ["Caesar's Headband"] = true, ["Stone Mask"] = true, ["Rib Cage of The Saint's Corpse"] = true,
+        ["Quinton's Glove"] = true, ["Zeppeli's Hat"] = true, ["Lucky Arrow"] = false,
+        ["Clackers"] = true, ["Steel Ball"] = true, ["Dio's Diary"] = true
+    }
+}
+
+repeat task.wait(0.25) until game:IsLoaded()
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+
+if not Player then
+    Player = Players.LocalPlayer or Players.PlayerAdded:Wait()
+end
+
+repeat
+    task.wait()
+until Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") and Player.Character:FindFirstChildOfClass("Humanoid")
+
+task.wait(1)
+print("Loaded.")
+
+-- Services
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -12,6 +38,14 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local HttpService = game:GetService("HttpService")
 local PlayerGui = Player:WaitForChild("PlayerGui")
 local Money = nil
+
+-- Configuration Mapping
+local WebhookURL = Config.WebhookURL
+local LastSendFile = "webhook_lastsend.txt"
+local SendInterval = Config.SendInterval
+local BuyLucky = Config.BuyLucky
+local AutoSell = Config.AutoSell
+local SellItems = Config.SellItems
 
 local function UpdateMoneyRef()
     if Player and Player:FindFirstChild("PlayerStats") then
@@ -53,7 +87,6 @@ local function GetLuckyArrowCount()
 end
 
 local function PersistLastSend(timestamp)
-
     pcall(function()
         writefile(LastSendFile, tostring(timestamp))
     end)
@@ -81,7 +114,7 @@ local function ReadLastSend()
 end
 
 local function SendWebhook(content, isEmbed)
-    if not WebhookURL or WebhookURL == "" or WebhookURL:find("YOUR_WEBHOOK") then
+    if not WebhookURL or WebhookURL == "" or WebhookURL:find("PUT_YOUR_WEBHOOK") then
         warn("Webhook URL not configured properly")
         return false
     end
