@@ -3,20 +3,7 @@
 -- v13: added webhook for money + lucky arrow count
 -- v14: webhook system now works properly
 -- v19: invisible now actually works
-repeat task.wait(0.25) until game:IsLoaded()
-local Players = game:GetService("Players")
-local Player = Players.LocalPlayer
-
-if not Player then
-    Player = Players.LocalPlayer or Players.PlayerAdded:Wait()
-end
-
-repeat
-    task.wait()
-until Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") and Player.Character:FindFirstChildOfClass("Humanoid")
-
-task.wait(1)
-print("Loaded.")
+-- howto: pair with settings
 
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
