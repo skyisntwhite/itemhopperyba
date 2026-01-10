@@ -728,7 +728,7 @@ repeat
 
                         if ProximityPrompt and ProximityPrompt.Parent then
                             BodyVelocity.Parent = HumanoidRootPart
-                            HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y - 5, Position.Z)
+                            HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y - 25, Position.Z)
                             task.wait(.4)
                             pcall(fireproximityprompt, ProximityPrompt)
                             task.wait(.55)
