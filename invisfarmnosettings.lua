@@ -344,13 +344,26 @@ local function TeleportTo(Position)
     end
 end
 
-local function ToggleNoclip(Value)
-    local Character = GetCharacter()
-    if Character then
-        for _, Child in pairs(Character:GetDescendants()) do
-            if Child:IsA("BasePart") and Child.CanCollide == not Value then
-                Child.CanCollide = Value
-            end
+local Map = workspace:FindFirstChild("Map")
+if Map then
+    local MapFolder = Instance.new("Folder", workspace)
+    for i, MapPart in pairs(Map:GetChildren()) do
+        task.spawn(function()
+            MapPart.Parent = MapFolder
+        end)
+    end
+    game.StarterGui:SetCore("SendNotification", {
+        Title = "NoClip Bypass Activated",
+        Text = "Enjoy sneaky farming!",
+        Duration = 5
+    })
+end
+
+local function ApplyNoClip()
+    if not Player.Character then return end
+    for _, part in pairs(Player.Character:GetDescendants()) do
+        if part:IsA("BasePart") or part:IsA("UnionOperation") then
+            part.CanCollide = false
         end
     end
 end
@@ -703,7 +716,8 @@ local SafeZone = CFrame.new(978, -42, -49)
 local BodyVelocity = Instance.new("BodyVelocity")
 BodyVelocity.Velocity = Vector3.new(0, 0, 0)
 
-ToggleNoclip(true)
+ApplyNoClip()
+RunService.Heartbeat:Connect(ApplyNoClip) -- Maintain continuously
 
 repeat
     for i = #getgenv().SpawnedItems, 1, -1 do
