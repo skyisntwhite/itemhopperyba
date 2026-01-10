@@ -235,7 +235,7 @@ else
     print(string.format("Webhook cooldown: %d minutes remaining", math.ceil(timeLeft / 60)))
 end
 
-game:GetService("RunService"):Set3dRenderingEnabled(true)
+
 
 task.spawn(function()
     while true do
