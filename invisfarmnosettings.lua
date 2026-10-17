@@ -765,53 +765,104 @@ if BodyVelocity and BodyVelocity.Parent then
     BodyVelocity:Destroy()
 end
 
--- Updated selling mechanics: use the game's Inventory module SellAll/BuyLucky APIs (as used by Farm.lua)
--- This replaces the UI-driven clicking flow with a direct module call for reliability.
+-- Selling helper modeled after Farm.lua SellAllWithDiagnostics
+local sellBusy = false
+local sellPerfSerial = 0
 
+local function SellAllWithDiagnostics(source, manualRequest)
+    if sellBusy then return false, 0, 0, "Another Merchant sale is already running" end
+    sellBusy = true
+
+    -- If not manualRequest and AutoSell disabled, preserve original behavior and skip
+    if not manualRequest and not AutoSell then
+        sellBusy = false
+        return false, 0, 0, "AutoSell disabled"
+    end
+
+    sellPerfSerial = sellPerfSerial + 1
+    local id = sellPerfSerial
+    local sampleCount, over50ms, over100ms = 0, 0, 0
+    local maxFrameSeconds, totalFrameSeconds = 0, 0
+    local listening = true
+    local heartbeatConnection = nil
+
+    pcall(function()
+        heartbeatConnection = RunService.Heartbeat:Connect(function(dt)
+            if not listening or type(dt) ~= "number" or dt < 0 then return end
+            sampleCount = sampleCount + 1
+            totalFrameSeconds = totalFrameSeconds + dt
+            if dt > maxFrameSeconds then maxFrameSeconds = dt end
+            if dt >= 0.05 then over50ms = over50ms + 1 end
+            if dt >= 0.10 then over100ms = over100ms + 1 end
+        end)
+    end)
+
+    print(('[SellPerf] BEGIN id=%d source=%s'):format(id, tostring(source)))
+    local startedAt = tick()
+
+    local sold, types, failed, reason
+    local ok = false
+    -- Require Inventory module and call SellAll
+    pcall(function()
+        local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
+        if not ModulesFolder then error("Modules folder not found") end
+        local InventoryModuleObject = ModulesFolder:FindFirstChild("Inventory")
+        if not InventoryModuleObject then error("Inventory module object not found") end
+        local invOk, Inventory = pcall(function() return require(InventoryModuleObject) end)
+        if not invOk or not Inventory then error("Failed to require Inventory") end
+        if type(Inventory.SellAll) ~= "function" then error("Inventory:SellAll not available") end
+        ok, sold, types, failed, reason = pcall(function() return Inventory:SellAll(manualRequest == true) end)
+    end)
+
+    local elapsedSeconds = math.max(0, tick() - startedAt)
+
+    listening = false
+    if heartbeatConnection then
+        pcall(function() heartbeatConnection:Disconnect() end)
+    end
+
+    local avgFrameMs = sampleCount > 0 and (totalFrameSeconds * 1000 / sampleCount) or 0
+    local message = ('[SellPerf] END id=%d source=%s ok=%s duration=%.3fs frames=%d avgFrame=%.1fms maxFrame=%.1fms slow50ms=%d slow100ms=%d'):format(
+        id, tostring(source), tostring(ok), elapsedSeconds, sampleCount, avgFrameMs,
+        maxFrameSeconds * 1000, over50ms, over100ms
+    )
+    if (not ok) or over100ms > 0 then
+        warn(message)
+    else
+        print(message)
+    end
+
+    sellBusy = false
+    if not ok then return false, 0, 0, sold end
+    return sold
+end
+
+-- AutoSell wrapper that uses SellAllWithDiagnostics
 local function AutoSellScanAndSell()
     if not AutoSell then
         print("AutoSell disabled; skipping selling.")
         return
     end
 
-    -- Try to require the Inventory module from ReplicatedStorage.Modules
-    local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
-    if not ModulesFolder then
-        warn("Inventory module not found (Modules folder missing). Cannot AutoSell.")
-        return
-    end
-
-    local InventoryModuleObject = ModulesFolder:FindFirstChild("Inventory")
-    if not InventoryModuleObject then
-        warn("Inventory module object not found. Cannot AutoSell.")
-        return
-    end
-
-    local ok, Inventory = pcall(function() return require(InventoryModuleObject) end)
-    if not ok or not Inventory then
-        warn("Failed to require Inventory module:", Inventory)
-        return
-    end
-
-    -- Call the Inventory:SellAll method. We pass `false` to indicate this is automatic (not manual).
-    local success, soldTypesOrErr = pcall(function()
-        if type(Inventory.SellAll) == "function" then
-            return Inventory:SellAll(false)
-        else
-            error("Inventory.SellAll not a function")
-        end
-    end)
-
-    if success then
-        print("AutoSell: Inventory:SellAll completed.")
+    -- Use SellAllWithDiagnostics to perform the sell (automatic)
+    local ok, res = pcall(function() return SellAllWithDiagnostics("autosell", false) end)
+    if not ok then
+        warn("AutoSell: sell failed: ", res)
     else
-        warn("AutoSell failed:", soldTypesOrErr)
+        print("AutoSell: sell attempted via Inventory module.")
     end
 
-    -- After selling, attempt to buy Lucky Arrow using Inventory:BuyLucky if available
+    -- After selling, attempt to buy lucky via Inventory if available
     pcall(function()
-        if type(Inventory.BuyLucky) == "function" then
-            pcall(function() Inventory:BuyLucky() end)
+        local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
+        if ModulesFolder then
+            local InventoryModuleObject = ModulesFolder:FindFirstChild("Inventory")
+            if InventoryModuleObject then
+                local invOk, Inventory = pcall(function() return require(InventoryModuleObject) end)
+                if invOk and Inventory and type(Inventory.BuyLucky) == "function" then
+                    pcall(function() Inventory:BuyLucky() end)
+                end
+            end
         end
     end)
 end
@@ -877,15 +928,20 @@ local function AttemptBuyLuckyBeforeHop()
     end
 end
 
-task.spawn(AttemptBuyLuckyBeforeHop)
+-- Before hopping: sell, buy lucky, then hop (mirrors Farm.lua flow)
+print("Farming complete - running SellAllWithDiagnostics, BuyLucky, then ServerHop.")
+pcall(function()
+    pcall(function() SellAllWithDiagnostics("server-hop", false) end)
+end)
 
-task.wait(1.5)
+-- Attempt to buy lucky via Inventory or fallback
+AttemptBuyLuckyBeforeHop()
 
-print("Farming complete - initiating ServerHop to move to next server.")
 if not table.find(Visited, JobId) then
     table.insert(Visited, JobId)
     pcall(function() writefile(SaveFile, Http:JSONEncode(Visited)) end)
 end
+
 task.wait(0.4)
 ServerHop()
 
