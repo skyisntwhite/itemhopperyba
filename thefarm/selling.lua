@@ -54,7 +54,6 @@ local function CountSellable()
     return c
 end
 
--- Uses the fully robust Inventory module integration or internal dialogue handling if present
 local function SellAllWithDiagnostics(source, manualRequest)
     if not manualRequest and not AutoSell then
         return false, 0, 0, "AutoSell disabled"
@@ -66,44 +65,64 @@ local function SellAllWithDiagnostics(source, manualRequest)
         return false, 0, 0, "No items"
     end
 
-    print(("[Selling] Found %d items to sell. Executing Inventory:SellAll..."):format(before))
+    print(("[Selling] Found %d items to sell. Initializing Inventory module..."):format(before))
 
     local sold, types, failed, reason = false, 0, 0, nil
+    
+    -- 1. Properly initialize and call the game's native Inventory module with expected config structures
     local success = pcall(function()
         local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
         if ModulesFolder then
             local InventoryModuleObject = ModulesFolder:FindFirstChild("Inventory")
             if InventoryModuleObject then
                 local invOk, Inventory = pcall(function() return require(InventoryModuleObject) end)
-                if invOk and Inventory and type(Inventory.SellAll) == "function" then
-                    -- If Inventory module has its own Init/Config, try to init it or call SellAll directly
+                if invOk and Inventory then
                     if type(Inventory.Init) == "function" then
                         pcall(function()
                             Inventory:Init({
                                 Config = {
-                                    GetSellItems = function() return SellItems end,
-                                    Get = function(self, key)
-                                        if key == "FarmEnabled" or key == "AutoSell" then return true end
-                                        return nil
+                                    Get = function(_, key)
+                                        if key == "FarmEnabled" then return true end
+                                        if key == "AutoSell" then return AutoSell end
+                                        if key == "BuyLucky" then return BuyLucky end
+                                        return Config[key]
+                                    end,
+                                    GetSellItems = function()
+                                        return SellItems
                                     end
                                 },
                                 RuntimeLog = nil,
-                                Movement = nil
+                                Movement = {
+                                    GetCharacter = function(_, part)
+                                        if Player.Character then
+                                            if not part then return Player.Character end
+                                            return Player.Character:FindFirstChild(part)
+                                        end
+                                        return nil
+                                    end,
+                                    Teleport = function(_, cf)
+                                        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+                                        if hrp then hrp.CFrame = cf end
+                                    end
+                                }
                             })
                         end)
                     end
-                    sold, types, failed, reason = Inventory:SellAll(true)
+                    if type(Inventory.SellAll) == "function" then
+                        sold, types, failed, reason = Inventory:SellAll(true)
+                    end
                 end
             end
         end
     end)
 
     if success and sold then
-        print("[Selling] Inventory:SellAll completed successfully.")
+        print("[Selling] Inventory module successfully executed sale.")
         return true, types, failed, reason
     end
 
-    -- Fallback manual prompt interaction if external Inventory module isn't loaded/responsive
+    -- 2. Robust Fallback: Teleport to merchant, equip items, and fire proximity prompt manually
+    print("[Selling] Falling back to manual merchant prompt interaction...")
     local prompt = nil
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") and obj.MaxActivationDistance ~= 0 then
@@ -123,11 +142,20 @@ local function SellAllWithDiagnostics(source, manualRequest)
 
         if hrp and parentPart and parentPart:IsA("BasePart") then
             hrp.CFrame = parentPart.CFrame + Vector3.new(0, 3, 0)
-            task.wait(0.3)
+            task.wait(0.4)
         end
 
-        pcall(function() fireproximityprompt(prompt) end)
-        task.wait(1)
+        for itemName, enabled in pairs(SellItems) do
+            if enabled then
+                local tool = Player.Backpack:FindFirstChild(itemName) or (Player.Character and Player.Character:FindFirstChild(itemName))
+                if tool and Player.Character and Player.Character:FindFirstChildOfClass("Humanoid") then
+                    pcall(function() Player.Character.Humanoid:EquipTool(tool) end)
+                    task.wait(0.3)
+                    pcall(function() fireproximityprompt(prompt) end)
+                    task.wait(0.8)
+                end
+            end
+        end
 
         if hrp and savedCFrame then
             hrp.CFrame = savedCFrame
@@ -135,7 +163,7 @@ local function SellAllWithDiagnostics(source, manualRequest)
         return true, 0, 0, nil
     end
 
-    return false, 0, 0, "Failed to execute sale"
+    return false, 0, 0, reason or "Failed to execute sale"
 end
 
 local function AutoSellScanAndSell()
