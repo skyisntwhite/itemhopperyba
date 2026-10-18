@@ -54,10 +54,22 @@ ItemSpawnFolder.ChildAdded:Connect(function(Model)
     end
 end)
 
--- Execute AutoSell & Buy Before Server Hop
-Selling.SellAllWithDiagnostics("startup", false)
-Selling.AttemptBuyLuckyBeforeHop()
+-- Execute AutoSell & Buy Before Server Hop using verified routine
+local success = false
+local ok, err = pcall(function()
+    if type(Selling.EnsureSoldThenHop) == "function" then
+        success = Selling.EnsureSoldThenHop()
+    else
+        -- fallback to existing functions if EnsureSoldThenHop is not present
+        Selling.SellAllWithDiagnostics("startup", false)
+        Selling.AttemptBuyLuckyBeforeHop()
+        success = true
+    end
+end)
+if not ok then
+    warn("[main] EnsureSoldThenHop failed: ", tostring(err))
+end
 
--- Start Server Hopping when done
-task.wait(2)
+-- small delay, then serverhop
+task.wait(0.5)
 ServerHop()
