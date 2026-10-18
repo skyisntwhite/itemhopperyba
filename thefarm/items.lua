@@ -135,19 +135,7 @@ local function GoInvisible()
 end
 
 -- Animation blocker loop
-task.spawn(function()
-    while task.wait(0.15) do
-        local hum = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
-        if hum then
-            for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
-                local id = track.Animation and track.Animation.AnimationId
-                if id and id ~= "rbxassetid://7189062263" then
-                    pcall(function() track:Stop() end)
-                end
-            end
-        end
-    end
-end)
+
 
 local function HasMaxItem(Item)
     local Count = 0
