@@ -838,33 +838,109 @@ local function SellAllWithDiagnostics(source, manualRequest)
 end
 
 -- AutoSell wrapper that uses SellAllWithDiagnostics
+-- Replace AutoSellScanAndSell with this improved routine
 local function AutoSellScanAndSell()
     if not AutoSell then
         print("AutoSell disabled; skipping selling.")
         return
     end
 
-    -- Use SellAllWithDiagnostics to perform the sell (automatic)
-    local ok, res = pcall(function() return SellAllWithDiagnostics("autosell", false) end)
-    if not ok then
-        warn("AutoSell: sell failed: ", res)
-    else
-        print("AutoSell: sell attempted via Inventory module.")
+    -- Try to require Inventory module from ReplicatedStorage.Modules first
+    local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
+    local InventoryModuleObject = ModulesFolder and ModulesFolder:FindFirstChild("Inventory")
+    local InventoryModule = nil
+    if InventoryModuleObject then
+        local ok, mod = pcall(function() return require(InventoryModuleObject) end)
+        if ok and type(mod) == "table" then
+            InventoryModule = mod
+        end
     end
 
-    -- After selling, attempt to buy lucky via Inventory if available
-    pcall(function()
-        local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
-        if ModulesFolder then
-            local InventoryModuleObject = ModulesFolder:FindFirstChild("Inventory")
-            if InventoryModuleObject then
-                local invOk, Inventory = pcall(function() return require(InventoryModuleObject) end)
-                if invOk and Inventory and type(Inventory.BuyLucky) == "function" then
-                    pcall(function() Inventory:BuyLucky() end)
-                end
+    -- Helper count of sellable items
+    local function countSellable()
+        local c = 0
+        if Player.Backpack then
+            for _, tool in pairs(Player.Backpack:GetChildren()) do
+                if SellItems[tool.Name] then c = c + 1 end
             end
         end
-    end)
+        if Player.Character then
+            for _, tool in pairs(Player.Character:GetChildren()) do
+                if tool:IsA("Tool") and SellItems[tool.Name] then c = c + 1 end
+            end
+        end
+        return c
+    end
+
+    local before = countSellable()
+    if before == 0 then
+        print("No sellable items found; skipping merchant interaction.")
+        return
+    end
+
+    print(("Found %d items to sell — attempting Inventory:SellAll if available."):format(before))
+
+    if InventoryModule and type(InventoryModule.SellAll) == "function" then
+        local ok, ret = pcall(function() return InventoryModule:SellAll(false) end)
+        print("[AutoSell] Inventory:SellAll called — ok=", tostring(ok), "ret=", tostring(ret))
+    else
+        print("[AutoSell] Inventory module or SellAll not available — falling back to prompt-based open.")
+        -- Fallback: try to find and activate a merchant prompt directly (robust)
+        local function findMerchantPromptLocal()
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("ProximityPrompt") and obj.MaxActivationDistance ~= 0 then
+                    local objectText = tostring(obj.ObjectText or ""):lower()
+                    local actionText = tostring(obj.ActionText or ""):lower()
+                    if objectText:find("merchant") or actionText:find("merchant") or objectText:find("shiftplox") or actionText:find("shiftplox") then
+                        return obj
+                    end
+                end
+            end
+            return nil
+        end
+
+        local prompt = findMerchantPromptLocal()
+        if prompt then
+            pcall(function()
+                -- try engine shortcut first
+                if pcall(function() return fireproximityprompt(prompt) end) then return end
+            end)
+            -- try InputHoldBegin/InputHoldEnd if available
+            pcall(function()
+                if typeof(prompt.Trigger) == "function" then
+                    pcall(function() prompt:Trigger() end)
+                end
+            end)
+            -- last resort: move player to prompt parent and fire again
+            pcall(function()
+                local parent = prompt.Parent
+                if parent and parent:IsA("BasePart") and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = Player.Character.HumanoidRootPart
+                    local saved = hrp.CFrame
+                    hrp.CFrame = parent.CFrame + Vector3.new(0, 2, 0)
+                    task.wait(0.12)
+                    pcall(function() fireproximityprompt(prompt) end)
+                    task.wait(0.08)
+                    pcall(function() hrp.CFrame = saved end)
+                end
+            end)
+        else
+            print("[AutoSell] No merchant prompt found in workspace.")
+        end
+    end
+
+    -- Wait for the inventory to actually decrease (gives Inventory:SellAll or prompt time to process)
+    local deadline = tick() + 3.0 -- tweak timeout as needed (3s default)
+    while tick() < deadline do
+        if countSellable() < before then
+            print("[AutoSell] Sell confirmed (items decreased).")
+            break
+        end
+        task.wait(0.12)
+    end
+    if countSellable() >= before then
+        warn("[AutoSell] Sell not confirmed within timeout. Proceeding but PreHop will still verify before hopping.")
+    end
 end
 
 AutoSellScanAndSell()
