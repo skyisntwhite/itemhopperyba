@@ -5,15 +5,18 @@ local Player = Players.LocalPlayer or Players.PlayerAdded:Wait()
 
 repeat task.wait() until Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
 
--- Load Modules (Replace paths with your GitHub raw URLs if hosted online)
-local Config = loadstring(game:HttpGet("YOUR_RAW_GITHUB_URL/Config.lua"))()
-local Webhook = loadstring(game:HttpGet("YOUR_RAW_GITHUB_URL/Webhook.lua"))(Config)
-loadstring(game:HttpGet("YOUR_RAW_GITHUB_URL/Bypasses.lua"))()
-local Items = loadstring(game:HttpGet("YOUR_RAW_GITHUB_URL/Items.lua"))()
-local Selling = loadstring(game:HttpGet("YOUR_RAW_GITHUB_URL/Selling.lua"))(Config)
-local ServerHop = loadstring(game:HttpGet("YOUR_RAW_GITHUB_URL/ServerHop.lua"))()
+-- Base URL for your GitHub repository folder
+local baseURL = "https://raw.githubusercontent.com/skyisntwhite/itemhopperyba/refs/heads/main/thefarm/"
 
-print("[YBA Farm] Modules loaded successfully.")
+-- Load Modules sequentially from your GitHub repository
+local Config = loadstring(game:HttpGet(baseURL .. "config.lua"))()
+local Webhook = loadstring(game:HttpGet(baseURL .. "webhook.lua"))(Config)
+loadstring(game:HttpGet(baseURL .. "bypasses.lua"))()
+local Items = loadstring(game:HttpGet(baseURL .. "items.lua"))()
+local Selling = loadstring(game:HttpGet(baseURL .. "selling.lua"))(Config)
+local ServerHop = loadstring(game:HttpGet(baseURL .. "serverhop.lua"))()
+
+print("[YBA Farm] Modules loaded successfully from GitHub.")
 
 -- Initial Webhook Check
 local LastSend = Webhook.ReadLastSend()
