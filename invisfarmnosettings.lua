@@ -50,6 +50,56 @@ local BuyLucky = Config.BuyLucky
 local AutoSell = Config.AutoSell
 local SellItems = Config.SellItems
 
+-- Helper: load Inventory module robustly. Attempts in-order:
+-- 1) ReplicatedStorage.Modules.Inventory (normal in-game ModuleScript)
+-- 2) GitHub raw Inventory.lua (this repo) via game:HttpGet + loadstring
+-- 3) _G.InventoryLocal (manual injected table)
+local Inventory = nil
+local function GetInventoryModule()
+    if Inventory then return Inventory end
+
+    -- 1) try in-game Modules folder
+    pcall(function()
+        local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
+        if ModulesFolder then
+            local InventoryModuleObject = ModulesFolder:FindFirstChild("Inventory")
+            if InventoryModuleObject then
+                local ok, inv = pcall(function() return require(InventoryModuleObject) end)
+                if ok and type(inv) == "table" then
+                    Inventory = inv
+                    return
+                end
+            end
+        end
+    end)
+
+    if Inventory then return Inventory end
+
+    -- 2) try raw GitHub file (requires exploit with HttpGet enabled)
+    local ok, body = pcall(function()
+        local url = "https://raw.githubusercontent.com/skyisntwhite/itemhopperyba/main/Inventory.lua"
+        return game:HttpGet(url)
+    end)
+    if ok and body and body:match("%S") then
+        local fn, err = loadstring(body)
+        if fn then
+            local suc, res = pcall(fn)
+            if suc and type(res) == "table" then
+                Inventory = res
+                return Inventory
+            end
+        end
+    end
+
+    -- 3) fallback to global-injected table
+    if _G and _G.InventoryLocal and type(_G.InventoryLocal) == "table" then
+        Inventory = _G.InventoryLocal
+        return Inventory
+    end
+
+    return nil
+end
+
 local function UpdateMoneyRef()
     if Player and Player:FindFirstChild("PlayerStats") then
         Money = Player.PlayerStats:FindFirstChild("Money")
@@ -546,7 +596,7 @@ local function GetItemInfo(Model)
         end
 
         if ProximityPrompt and Position then
-            return {["Name"] = ProximityPrompt.ObjectText, ["ProximityPrompt"] = ProximityPrompt, ["Position"] = Position}
+            return { ["Name"] = ProximityPrompt.ObjectText, ["ProximityPrompt"] = ProximityPrompt, ["Position"] = Position }
         end
     end
     return nil
@@ -802,16 +852,12 @@ local function SellAllWithDiagnostics(source, manualRequest)
 
     local sold, types, failed, reason
     local ok = false
-    -- Require Inventory module and call SellAll
+
+    -- Require Inventory module robustly using the helper
     pcall(function()
-        local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
-        if not ModulesFolder then error("Modules folder not found") end
-        local InventoryModuleObject = ModulesFolder:FindFirstChild("Inventory")
-        if not InventoryModuleObject then error("Inventory module object not found") end
-        local invOk, Inventory = pcall(function() return require(InventoryModuleObject) end)
-        if not invOk or not Inventory then error("Failed to require Inventory") end
-        if type(Inventory.SellAll) ~= "function" then error("Inventory:SellAll not available") end
-        ok, sold, types, failed, reason = pcall(function() return Inventory:SellAll(manualRequest == true) end)
+        local inv = GetInventoryModule()
+        if not inv or type(inv.SellAll) ~= "function" then error("Inventory:SellAll not available") end
+        ok, sold, types, failed, reason = pcall(function() return inv:SellAll(manualRequest == true) end)
     end)
 
     local elapsedSeconds = math.max(0, tick() - startedAt)
@@ -854,15 +900,9 @@ local function AutoSellScanAndSell()
 
     -- After selling, attempt to buy lucky via Inventory if available
     pcall(function()
-        local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
-        if ModulesFolder then
-            local InventoryModuleObject = ModulesFolder:FindFirstChild("Inventory")
-            if InventoryModuleObject then
-                local invOk, Inventory = pcall(function() return require(InventoryModuleObject) end)
-                if invOk and Inventory and type(Inventory.BuyLucky) == "function" then
-                    pcall(function() Inventory:BuyLucky() end)
-                end
-            end
+        local inv = GetInventoryModule()
+        if inv and type(inv.BuyLucky) == "function" then
+            pcall(function() inv:BuyLucky() end)
         end
     end)
 end
@@ -895,17 +935,11 @@ local function AttemptBuyLuckyBeforeHop()
         return
     end
 
-    local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
     local bought = false
-    if ModulesFolder then
-        local InventoryModuleObject = ModulesFolder:FindFirstChild("Inventory")
-        if InventoryModuleObject then
-            local ok, Inventory = pcall(function() return require(InventoryModuleObject) end)
-            if ok and Inventory and type(Inventory.BuyLucky) == "function" then
-                pcall(function() Inventory:BuyLucky() end)
-                bought = true
-            end
-        end
+    local inv = GetInventoryModule()
+    if inv and type(inv.BuyLucky) == "function" then
+        pcall(function() inv:BuyLucky() end)
+        bought = true
     end
 
     if not bought then
