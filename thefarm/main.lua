@@ -152,16 +152,13 @@ task.spawn(function()
     pcall(function() if game.Lighting:FindFirstChild("DepthOfField") then game.Lighting.DepthOfField:Destroy() end end)
 end)
 
--- Initialize item farming & invisibility loop
-Items.InitFarming()
+-- 1. Run Item Farm (this will now yield/wait until all map items are fully collected)
+Items.RunItemFarm()
 
--- Execute AutoSell & Buy before entering the hop routine
+-- 2. Execute Auto-Sell & Buy Lucky Arrows after farming finishes
 Selling.AutoSellScanAndSell()
 Selling.AttemptBuyLuckyBeforeHop()
 
--- Start Server Hopping loop
+-- 3. Execute Server Hopping loop after everything is complete
 task.wait(2)
-while true do
-    ServerHop()
-    task.wait(3)
-end
+ServerHop()

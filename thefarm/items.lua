@@ -135,7 +135,19 @@ local function GoInvisible()
 end
 
 -- Animation blocker loop
-
+task.spawn(function()
+    while task.wait(0.15) do
+        local hum = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
+                local id = track.Animation and track.Animation.AnimationId
+                if id and id ~= "rbxassetid://7189062263" then
+                    pcall(function() track:Stop() end)
+                end
+            end
+        end
+    end
+end)
 
 local function HasMaxItem(Item)
     local Count = 0
@@ -165,7 +177,7 @@ local function GetItemInfo(Model)
     return nil
 end
 
-local function InitFarming()
+local function RunItemFarm()
     GoInvisible()
     task.wait(1)
     TeleportTo(CFrame.new(978, -42, -49))
@@ -196,45 +208,48 @@ local function InitFarming()
     local BodyVelocity = Instance.new("BodyVelocity")
     BodyVelocity.Velocity = Vector3.new(0, 0, 0)
 
-    task.spawn(function()
-        repeat
-            for i = #getgenv().SpawnedItems, 1, -1 do
-                local entry = getgenv().SpawnedItems[i]
-                if not entry or not entry.Model or not entry.Model.Parent then
-                    table.remove(getgenv().SpawnedItems, i)
-                else
-                    local Model = entry.Model
-                    local ItemInfo = entry.Info
-                    local HumanoidRootPart = GetCharacter("HumanoidRootPart")
-                    if HumanoidRootPart then
-                        local Name = ItemInfo.Name
-                        if not HasMaxItem(Name) then
-                            local ProximityPrompt = ItemInfo.ProximityPrompt
-                            local Position = (Model.PrimaryPart and Model.PrimaryPart.Position) or ItemInfo.Position
+    -- Synchronous farm loop: blocks execution until all spawned items are collected
+    repeat
+        for i = #getgenv().SpawnedItems, 1, -1 do
+            local entry = getgenv().SpawnedItems[i]
+            if not entry or not entry.Model or not entry.Model.Parent then
+                table.remove(getgenv().SpawnedItems, i)
+            else
+                local Model = entry.Model
+                local ItemInfo = entry.Info
+                local HumanoidRootPart = GetCharacter("HumanoidRootPart")
+                if HumanoidRootPart then
+                    local Name = ItemInfo.Name
+                    if not HasMaxItem(Name) then
+                        local ProximityPrompt = ItemInfo.ProximityPrompt
+                        local Position = (Model.PrimaryPart and Model.PrimaryPart.Position) or ItemInfo.Position
 
-                            table.remove(getgenv().SpawnedItems, i)
+                        table.remove(getgenv().SpawnedItems, i)
 
-                            if ProximityPrompt and ProximityPrompt.Parent then
-                                BodyVelocity.Parent = HumanoidRootPart
-                                HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y - 25, Position.Z)
-                                task.wait(0.4)
-                                pcall(fireproximityprompt, ProximityPrompt)
-                                task.wait(0.55)
-                                HumanoidRootPart.CFrame = SafeZone
-                            end
-                        else
-                            table.remove(getgenv().SpawnedItems, i)
+                        if ProximityPrompt and ProximityPrompt.Parent then
+                            BodyVelocity.Parent = HumanoidRootPart
+                            HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y - 25, Position.Z)
+                            task.wait(0.4)
+                            pcall(fireproximityprompt, ProximityPrompt)
+                            task.wait(0.55)
+                            HumanoidRootPart.CFrame = SafeZone
                         end
+                    else
+                        table.remove(getgenv().SpawnedItems, i)
                     end
                 end
             end
-            task.wait(0.6)
-        until false
-    end)
+        end
+        task.wait(0.6)
+    until #getgenv().SpawnedItems == 0
+
+    if BodyVelocity and BodyVelocity.Parent then
+        BodyVelocity:Destroy()
+    end
 end
 
 return {
-    InitFarming = InitFarming,
+    RunItemFarm = RunItemFarm,
     GoInvisible = GoInvisible,
     TeleportTo = TeleportTo
 }
