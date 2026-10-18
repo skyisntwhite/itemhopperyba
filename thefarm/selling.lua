@@ -54,6 +54,21 @@ local function CountSellable()
     return c
 end
 
+local function FindMerchantCFrame()
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.MaxActivationDistance ~= 0 then
+            local objText = tostring(obj.ObjectText or ""):lower()
+            local actText = tostring(obj.ActionText or ""):lower()
+            if objText:find("merchant", 1, true) or actText:find("merchant", 1, true) or objText:find("shiftplox", 1, true) then
+                if obj.Parent and obj.Parent:IsA("BasePart") then
+                    return obj.Parent.CFrame
+                end
+            end
+        end
+    end
+    return nil
+end
+
 local function SellAllWithDiagnostics(source, manualRequest)
     if not manualRequest and not AutoSell then
         return false, 0, 0, "AutoSell disabled"
@@ -65,11 +80,23 @@ local function SellAllWithDiagnostics(source, manualRequest)
         return false, 0, 0, "No items"
     end
 
-    print(("[Selling] Found %d items to sell. Initializing Inventory module..."):format(before))
+    print(("[Selling] Found %d items to sell. Teleporting to Merchant..."):format(before))
+
+    local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+    local savedCFrame = hrp and hrp.CFrame
+    local merchantCF = FindMerchantCFrame()
+
+    -- Teleport character directly next to the merchant so proximity and distance checks pass
+    if hrp and merchantCF then
+        hrp.CFrame = merchantCF + Vector3.new(0, 3, 0)
+        task.wait(0.4)
+    else
+        print("[Selling] Warning: Merchant location not found in workspace.")
+    end
 
     local sold, types, failed, reason = false, 0, 0, nil
     
-    -- 1. Properly initialize and call the game's native Inventory module with expected config structures
+    -- Initialize and call the game's native Inventory module which handles automated dialogue injection
     local success = pcall(function()
         local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
         if ModulesFolder then
@@ -101,8 +128,8 @@ local function SellAllWithDiagnostics(source, manualRequest)
                                         return nil
                                     end,
                                     Teleport = function(_, cf)
-                                        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-                                        if hrp then hrp.CFrame = cf end
+                                        local h = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+                                        if h then h.CFrame = cf end
                                     end
                                 }
                             })
@@ -116,54 +143,17 @@ local function SellAllWithDiagnostics(source, manualRequest)
         end
     end)
 
+    -- Restore player position back to the safe zone / previous position
+    if hrp and savedCFrame then
+        hrp.CFrame = savedCFrame
+    end
+
     if success and sold then
-        print("[Selling] Inventory module successfully executed sale.")
+        print("[Selling] Inventory module successfully completed the sale.")
         return true, types, failed, reason
     end
 
-    -- 2. Robust Fallback: Teleport to merchant, equip items, and fire proximity prompt manually
-    print("[Selling] Falling back to manual merchant prompt interaction...")
-    local prompt = nil
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.MaxActivationDistance ~= 0 then
-            local objText = tostring(obj.ObjectText or ""):lower()
-            local actText = tostring(obj.ActionText or ""):lower()
-            if objText:find("merchant", 1, true) or actText:find("merchant", 1, true) or objText:find("shiftplox", 1, true) then
-                prompt = obj
-                break
-            end
-        end
-    end
-
-    if prompt then
-        local parentPart = prompt.Parent
-        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-        local savedCFrame = hrp and hrp.CFrame
-
-        if hrp and parentPart and parentPart:IsA("BasePart") then
-            hrp.CFrame = parentPart.CFrame + Vector3.new(0, 3, 0)
-            task.wait(0.4)
-        end
-
-        for itemName, enabled in pairs(SellItems) do
-            if enabled then
-                local tool = Player.Backpack:FindFirstChild(itemName) or (Player.Character and Player.Character:FindFirstChild(itemName))
-                if tool and Player.Character and Player.Character:FindFirstChildOfClass("Humanoid") then
-                    pcall(function() Player.Character.Humanoid:EquipTool(tool) end)
-                    task.wait(0.3)
-                    pcall(function() fireproximityprompt(prompt) end)
-                    task.wait(0.8)
-                end
-            end
-        end
-
-        if hrp and savedCFrame then
-            hrp.CFrame = savedCFrame
-        end
-        return true, 0, 0, nil
-    end
-
-    return false, 0, 0, reason or "Failed to execute sale"
+    return false, 0, 0, reason or "Sell execution failed"
 end
 
 local function AutoSellScanAndSell()
