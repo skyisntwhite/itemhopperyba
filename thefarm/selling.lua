@@ -39,54 +39,6 @@ local function GetLuckyArrowCount()
     return Count
 end
 
-local function FindMerchantPrompt()
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.MaxActivationDistance ~= 0 then
-            local parent = obj.Parent
-            local matchedMerchant = false
-            local depth = 0
-            while parent and parent ~= Workspace and depth < 6 do
-                local name = tostring(parent.Name):lower()
-                if name:find("merchant", 1, true) or name:find("shiftplox", 1, true) then
-                    matchedMerchant = true
-                    break
-                end
-                parent = parent.Parent
-                depth = depth + 1
-            end
-            local objText = tostring(obj.ObjectText or ""):lower()
-            local actText = tostring(obj.ActionText or ""):lower()
-            if matchedMerchant or objText:find("merchant", 1, true) or actText:find("merchant", 1, true) or objText:find("shiftplox", 1, true) or actText:find("shiftplox", 1, true) then
-                return obj
-            end
-        end
-    end
-    return nil
-end
-
-local function EquipSellTool(itemName)
-    local char = Player.Character
-    local hum = char and char:FindFirstChildWhichIsA("Humanoid")
-    if not hum then return nil end
-
-    local tool = Player.Backpack:FindFirstChild(itemName)
-    if not tool and char then
-        tool = char:FindFirstChild(itemName)
-    end
-    if not tool then return nil end
-
-    if tool.Parent == Player.Backpack then
-        pcall(function() hum:EquipTool(tool) end)
-        task.wait(0.1)
-    end
-
-    local deadline = tick() + 0.5
-    while tool.Parent ~= char and tick() < deadline do
-        task.wait()
-    end
-    return tool.Parent == char and tool or nil
-end
-
 local function CountSellable()
     local c = 0
     if Player.Backpack then
@@ -102,47 +54,7 @@ local function CountSellable()
     return c
 end
 
-local function ClickButton(btn)
-    if not btn or not btn.Parent then return false end
-    if type(firesignal) == "function" then
-        local ok = pcall(function() firesignal(btn.MouseButton1Click) end)
-        if ok then return true end
-    end
-    if type(getconnections) == "function" then
-        local ok, conns = pcall(function() return getconnections(btn.MouseButton1Click) end)
-        if ok and type(conns) == "table" then
-            for _, conn in ipairs(conns) do
-                local fn = nil
-                pcall(function() fn = conn.Function end)
-                if type(fn) == "function" then
-                    if pcall(fn) then return true end
-                end
-            end
-        end
-    end
-    return false
-end
-
-local function HandleDialogue()
-    local dlg = Player.PlayerGui:FindFirstChild("DialogueGui")
-    local deadline = tick() + 2.5
-    while tick() < deadline do
-        dlg = Player.PlayerGui:FindFirstChild("DialogueGui")
-        if dlg then
-            for _, obj in ipairs(dlg:GetDescendants()) do
-                if obj:IsA("TextButton") and obj.Visible then
-                    local text = tostring(obj.Text or ""):lower()
-                    if text:find("sell") or text:find("all") or text:find("yes") or text:find("ok") or text:find("deal") or text:find("confirm") or text:find("option1") then
-                        ClickButton(obj)
-                        task.wait(0.2)
-                    end
-                end
-            end
-        end
-        task.wait(0.1)
-    end
-end
-
+-- Uses the fully robust Inventory module integration or internal dialogue handling if present
 local function SellAllWithDiagnostics(source, manualRequest)
     if not manualRequest and not AutoSell then
         return false, 0, 0, "AutoSell disabled"
@@ -154,69 +66,76 @@ local function SellAllWithDiagnostics(source, manualRequest)
         return false, 0, 0, "No items"
     end
 
-    print(("[Selling] Found %d items to sell. Interacting with Merchant..."):format(before))
+    print(("[Selling] Found %d items to sell. Executing Inventory:SellAll..."):format(before))
 
-    -- Try ReplicatedStorage Inventory module first if available
-    local soldViaModule = false
-    pcall(function()
+    local sold, types, failed, reason = false, 0, 0, nil
+    local success = pcall(function()
         local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
         if ModulesFolder then
             local InventoryModuleObject = ModulesFolder:FindFirstChild("Inventory")
             if InventoryModuleObject then
                 local invOk, Inventory = pcall(function() return require(InventoryModuleObject) end)
                 if invOk and Inventory and type(Inventory.SellAll) == "function" then
-                    Inventory:SellAll(manualRequest == true)
-                    soldViaModule = true
+                    -- If Inventory module has its own Init/Config, try to init it or call SellAll directly
+                    if type(Inventory.Init) == "function" then
+                        pcall(function()
+                            Inventory:Init({
+                                Config = {
+                                    GetSellItems = function() return SellItems end,
+                                    Get = function(self, key)
+                                        if key == "FarmEnabled" or key == "AutoSell" then return true end
+                                        return nil
+                                    end
+                                },
+                                RuntimeLog = nil,
+                                Movement = nil
+                            })
+                        end)
+                    end
+                    sold, types, failed, reason = Inventory:SellAll(true)
                 end
             end
         end
     end)
 
-    if soldViaModule then
-        task.wait(1)
-        return true, 0, 0, nil
+    if success and sold then
+        print("[Selling] Inventory:SellAll completed successfully.")
+        return true, types, failed, reason
     end
 
-    -- Prompt & Dialogue fallback with teleportation to Merchant
-    local prompt = FindMerchantPrompt()
-    if not prompt then
-        print("[Selling] Merchant ProximityPrompt not found in workspace.")
-        return false, 0, 0, "Prompt not found"
-    end
-
-    local parentPart = prompt.Parent
-    local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-    local savedCFrame = hrp and hrp.CFrame
-
-    if hrp and parentPart and parentPart:IsA("BasePart") then
-        hrp.CFrame = parentPart.CFrame + Vector3.new(0, 3, 0)
-        task.wait(0.4)
-    end
-
-    for itemName, enabled in pairs(SellItems) do
-        if enabled then
-            while Player.Backpack:FindFirstChild(itemName) or (Player.Character and Player.Character:FindFirstChild(itemName)) do
-                local tool = EquipSellTool(itemName)
-                if not tool then break end
-
-                pcall(function() fireproximityprompt(prompt) end)
-                task.wait(0.4)
-                HandleDialogue()
-                task.wait(0.6)
-
-                if CountSellable() >= before then
-                    break
-                end
-                before = CountSellable()
+    -- Fallback manual prompt interaction if external Inventory module isn't loaded/responsive
+    local prompt = nil
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.MaxActivationDistance ~= 0 then
+            local objText = tostring(obj.ObjectText or ""):lower()
+            local actText = tostring(obj.ActionText or ""):lower()
+            if objText:find("merchant", 1, true) or actText:find("merchant", 1, true) or objText:find("shiftplox", 1, true) then
+                prompt = obj
+                break
             end
         end
     end
 
-    if hrp and savedCFrame then
-        hrp.CFrame = savedCFrame
+    if prompt then
+        local parentPart = prompt.Parent
+        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+        local savedCFrame = hrp and hrp.CFrame
+
+        if hrp and parentPart and parentPart:IsA("BasePart") then
+            hrp.CFrame = parentPart.CFrame + Vector3.new(0, 3, 0)
+            task.wait(0.3)
+        end
+
+        pcall(function() fireproximityprompt(prompt) end)
+        task.wait(1)
+
+        if hrp and savedCFrame then
+            hrp.CFrame = savedCFrame
+        end
+        return true, 0, 0, nil
     end
 
-    return true, 0, 0, nil
+    return false, 0, 0, "Failed to execute sale"
 end
 
 local function AutoSellScanAndSell()
