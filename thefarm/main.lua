@@ -131,7 +131,7 @@ task.spawn(function()
     end
 end)
 
-game:GetService("RunService"):Set3dRenderingEnabled(true)
+game:GetService("RunService"):Set3dRenderingEnabled(false)
 
 -- HUD & Loading Screens Cleanup
 if not PlayerGui:FindFirstChild("HUD") then
@@ -152,13 +152,21 @@ task.spawn(function()
     pcall(function() if game.Lighting:FindFirstChild("DepthOfField") then game.Lighting.DepthOfField:Destroy() end end)
 end)
 
--- 1. Run Item Farm (this will now yield/wait until all map items are fully collected)
+-- 1. Execute Synchronous Item Farm
 Items.RunItemFarm()
 
--- 2. Execute Auto-Sell & Buy Lucky Arrows after farming finishes
+-- 2. Execute Auto-Sell Scan & Sell Loop
 Selling.AutoSellScanAndSell()
+
+-- 3. Attempt Buying Lucky Arrow
 Selling.AttemptBuyLuckyBeforeHop()
 
--- 3. Execute Server Hopping loop after everything is complete
+-- 4. Server Hop Routine
+print("Farming complete - initiating ServerHop to move to next server.")
 task.wait(2)
 ServerHop()
+
+while true do
+    ServerHop()
+    task.wait(3)
+end
