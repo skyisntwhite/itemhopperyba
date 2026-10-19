@@ -14,16 +14,17 @@ pcall(function()
     VisitedServersCache = Http:JSONDecode(cached)
 end)
 
--- Preference toggle: use getgenv so users can toggle at runtime
+-- Preference toggle: default to false (or whatever default you prefer)
 if getgenv().PreferLowPop == nil then
-    getgenv().PreferLowPop = false -- default: prefer lower population servers
+    getgenv().PreferLowPop = false
 end
 
--- Convenience functions exposed globally for easy toggling
+-- Convenience functions for runtime control
 getgenv().SetPreferLowPop = function(val)
     getgenv().PreferLowPop = not not val
     pcall(function() print("[ServerHop] PreferLowPop set to", getgenv().PreferLowPop) end)
 end
+
 getgenv().TogglePreferLowPop = function()
     getgenv().PreferLowPop = not getgenv().PreferLowPop
     pcall(function() print("[ServerHop] PreferLowPop toggled to", getgenv().PreferLowPop) end)
@@ -35,7 +36,11 @@ local function ServerHop()
 
     while Attempt < MaxRetries do
         Attempt = Attempt + 1
-        local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Asc&limit=100"):format(PlaceId)
+        
+        -- Dynamically set sortOrder based on PreferLowPop preference
+        local sortOrder = getgenv().PreferLowPop and "Asc" or "Desc"
+        local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=%s&limit=100"):format(PlaceId, sortOrder)
+        
         local success, result = pcall(function()
             return Http:JSONDecode(game:HttpGet(url))
         end)
@@ -49,7 +54,7 @@ local function ServerHop()
             end
 
             if #candidates > 0 then
-                -- sort by preference: low or high population
+                -- Sort candidate list based on user preference
                 if getgenv().PreferLowPop then
                     table.sort(candidates, function(a, b) return a.playing < b.playing end)
                 else
@@ -64,7 +69,9 @@ local function ServerHop()
                 end)
 
                 pcall(function()
-                    print(("[ServerHop] Switching to server %s (%d/%d players) PreferLowPop=%s"):format(target.id, target.playing, target.maxPlayers, tostring(getgenv().PreferLowPop)))
+                    print(("[ServerHop] Switching to server %s (%d/%d players) PreferLowPop=%s"):format(
+                        target.id, target.playing, target.maxPlayers, tostring(getgenv().PreferLowPop)
+                    ))
                 end)
 
                 TeleportService:TeleportToPlaceInstance(PlaceId, target.id, Player)
@@ -74,6 +81,7 @@ local function ServerHop()
         task.wait(1.5)
     end
 
+    -- Clear cache and retry standard teleport if no candidates match
     VisitedServersCache = {}
     pcall(function()
         writefile(SaveFile, Http:JSONEncode(VisitedServersCache))
