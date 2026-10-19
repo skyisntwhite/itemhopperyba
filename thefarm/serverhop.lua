@@ -16,7 +16,7 @@ end)
 
 -- Preference toggle: use getgenv so users can toggle at runtime
 if getgenv().PreferLowPop == nil then
-    getgenv().PreferLowPop = true -- default: prefer lower population servers
+    getgenv().PreferLowPop = false -- default: prefer lower population servers
 end
 
 -- Convenience functions exposed globally for easy toggling
