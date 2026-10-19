@@ -177,14 +177,44 @@ local function GetItemInfo(Model)
     return nil
 end
 
+-- Priority list: prefer these high-value items even if further away
+local PriorityItems = {
+    ["Lucky Arrow"] = true,
+    ["Stone Mask"] = true
+}
+
+-- Build a sorted list of spawned items by distance and priority
+local function GetSortedSpawnedItems(spawned)
+    local hrp = GetCharacter("HumanoidRootPart")
+    local myPos = hrp and hrp.Position
+    local list = {}
+    for i = #spawned, 1, -1 do
+        local entry = spawned[i]
+        if entry and entry.Model and entry.Model.PrimaryPart then
+            local pos = entry.Model.PrimaryPart.Position
+            local d2 = myPos and (pos - myPos).Magnitude or math.huge
+            local priority = PriorityItems[entry.Info.Name] and 0 or 1
+            table.insert(list, {idx = i, dist = d2, prio = priority, entry = entry})
+        else
+            table.remove(spawned, i)
+        end
+    end
+    table.sort(list, function(a,b)
+        if a.prio ~= b.prio then return a.prio < b.prio end
+        return a.dist < b.dist
+    end)
+    return list
+end
+
 local function RunItemFarm()
     GoInvisible()
-    task.wait(1)
+    task.wait(0.8)
     TeleportTo(CFrame.new(978, -42, -49))
-    
+
     local ItemSpawnFolder = Workspace:WaitForChild("Item_Spawns"):WaitForChild("Items")
     getgenv().SpawnedItems = {}
 
+    -- Event-driven insertion (keeps original 0.5s wait to allow model setup)
     ItemSpawnFolder.ChildAdded:Connect(function(Model)
         task.wait(0.5)
         if Model:IsA("Model") then
@@ -195,6 +225,7 @@ local function RunItemFarm()
         end
     end)
 
+    -- Initial population
     for _, Model in ipairs(ItemSpawnFolder:GetChildren()) do
         if Model:IsA("Model") then
             local ItemInfo = GetItemInfo(Model)
@@ -208,39 +239,61 @@ local function RunItemFarm()
     local BodyVelocity = Instance.new("BodyVelocity")
     BodyVelocity.Velocity = Vector3.new(0, 0, 0)
 
-    -- Synchronous farm loop: blocks execution until all spawned items are collected
+    -- Improved farm loop: process prioritized and nearest items first
     repeat
-        for i = #getgenv().SpawnedItems, 1, -1 do
-            local entry = getgenv().SpawnedItems[i]
+        local sorted = GetSortedSpawnedItems(getgenv().SpawnedItems)
+        for _, info in ipairs(sorted) do
+            local i = info.idx
+            local entry = info.entry
             if not entry or not entry.Model or not entry.Model.Parent then
-                table.remove(getgenv().SpawnedItems, i)
+                -- already removed, ensure cleanup
+                for j = #getgenv().SpawnedItems, 1, -1 do
+                    if getgenv().SpawnedItems[j] == entry then table.remove(getgenv().SpawnedItems, j) end
+                end
             else
                 local Model = entry.Model
                 local ItemInfo = entry.Info
                 local HumanoidRootPart = GetCharacter("HumanoidRootPart")
                 if HumanoidRootPart then
                     local Name = ItemInfo.Name
+                    -- always respect HasMaxItem; don't collect if at capacity
                     if not HasMaxItem(Name) then
                         local ProximityPrompt = ItemInfo.ProximityPrompt
                         local Position = (Model.PrimaryPart and Model.PrimaryPart.Position) or ItemInfo.Position
 
-                        table.remove(getgenv().SpawnedItems, i)
+                        -- remove from queue immediately to avoid double-processing
+                        for j = #getgenv().SpawnedItems, 1, -1 do
+                            if getgenv().SpawnedItems[j] and getgenv().SpawnedItems[j].Model == Model then
+                                table.remove(getgenv().SpawnedItems, j)
+                                break
+                            end
+                        end
 
                         if ProximityPrompt and ProximityPrompt.Parent then
+                            -- attach BodyVelocity once and use a small offset to reliably trigger prompt
                             BodyVelocity.Parent = HumanoidRootPart
-                            HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y - 25, Position.Z)
-                            task.wait(0.4)
+                            -- prefer approaching from above to avoid collisions
+                            HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y + 18, Position.Z)
+                            task.wait(0.22)
                             pcall(fireproximityprompt, ProximityPrompt)
-                            task.wait(0.55)
+                            task.wait(0.28)
+                            -- return to SafeZone quickly
                             HumanoidRootPart.CFrame = SafeZone
                         end
                     else
-                        table.remove(getgenv().SpawnedItems, i)
+                        -- capacity reached; skip and remove entry
+                        for j = #getgenv().SpawnedItems, 1, -1 do
+                            if getgenv().SpawnedItems[j] and getgenv().SpawnedItems[j].Model == Model then
+                                table.remove(getgenv().SpawnedItems, j)
+                                break
+                            end
+                        end
                     end
                 end
             end
+            task.wait(0.04) -- small throttle to avoid tight looping
         end
-        task.wait(0.6)
+        task.wait(0.4)
     until #getgenv().SpawnedItems == 0
 
     if BodyVelocity and BodyVelocity.Parent then
