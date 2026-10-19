@@ -4,12 +4,20 @@ local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+local TeleportService = game:GetService("TeleportService")
 
 local BuyLucky = Config.BuyLucky
 local AutoSell = Config.AutoSell
 local SellItems = Config.SellItems
 local Money = nil
 
+-- keep list (always protect these)
+local ForceKeep = {
+    ["Lucky Arrow"] = true,
+    ["Lucky Stone Mask"] = true,
+}
+
+-- Helpers - money / inventory
 local function UpdateMoneyRef()
     if Player and Player:FindFirstChild("PlayerStats") then
         Money = Player.PlayerStats:FindFirstChild("Money")
@@ -50,11 +58,66 @@ local function GetCharacter(Part)
     return nil
 end
 
-local function FindMerchantCFrame()
+-- Click helpers (firesignal/getconnections fallback)
+local function ClickButton(btn)
+    if not btn or not btn.Parent then return false end
+    if type(firesignal) == "function" then
+        local ok = pcall(function() firesignal(btn.MouseButton1Click) end)
+        if ok then return true end
+    end
+    if type(getconnections) == "function" then
+        local ok, conns = pcall(function() return getconnections(btn.MouseButton1Click) end)
+        if ok and type(conns) == "table" then
+            for _, conn in ipairs(conns) do
+                local fn = nil
+                pcall(function() fn = conn.Function end)
+                if type(fn) == "function" then
+                    if pcall(fn) then return true end
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function HandleDialogue()
+    -- click any obvious sell/all/yes/confirm buttons in the open dialogue
+    local deadline = tick() + 2.0
+    while tick() < deadline do
+        local dlg = Player.PlayerGui:FindFirstChild("DialogueGui") or Player.PlayerGui:FindFirstChild("Dialogue")
+        if dlg then
+            for _, obj in ipairs(dlg:GetDescendants()) do
+                if obj:IsA("TextButton") and obj.Visible then
+                    local text = tostring(obj.Text or ""):lower()
+                    if text:find("sell") or text:find("all") or text:find("yes") or text:find("ok") or text:find("confirm") or text:find("deal") or text:find("option1") then
+                        ClickButton(obj)
+                        task.wait(0.18)
+                        -- allow dialogue to progress
+                    end
+                end
+            end
+        end
+        task.wait(0.08)
+    end
+end
+
+-- Try to require the repository's Inventory module (preferred)
+local InventoryModule = nil
+pcall(function()
+    local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
+    if ModulesFolder then
+        local InventoryObject = ModulesFolder:FindFirstChild("Inventory")
+        if InventoryObject then
+            local ok, mod = pcall(function() return require(InventoryObject) end)
+            if ok and mod then InventoryModule = mod end
+        end
+    end
+end)
+
+local function FindMerchantPrompt()
+    -- search workspace for a merchant proximity prompt
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") and obj.MaxActivationDistance ~= 0 then
-            local objText = tostring(obj.ObjectText or ""):lower()
-            local actText = tostring(obj.ActionText or ""):lower()
             local parent = obj.Parent
             local matchedMerchant = false
             local depth = 0
@@ -67,117 +130,118 @@ local function FindMerchantCFrame()
                 parent = parent.Parent
                 depth = depth + 1
             end
-            if matchedMerchant or objText:find("merchant", 1, true) or actText:find("merchant", 1, true) or objText:find("shiftplox", 1, true) then
-                if obj.Parent and obj.Parent:IsA("BasePart") then
-                    return obj.Parent.CFrame
-                end
+            local objText = tostring(obj.ObjectText or ""):lower()
+            local actText = tostring(obj.ActionText or ""):lower()
+            if matchedMerchant or objText:find("merchant", 1, true) or actText:find("merchant", 1, true) or objText:find("shiftplox", 1, true) or actText:find("shiftplox", 1, true) then
+                return obj
             end
         end
     end
     return nil
 end
 
+local function EquipSellTool(itemName)
+    local char = Player.Character
+    local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+    if not hum then return nil end
+
+    local tool = Player.Backpack:FindFirstChild(itemName)
+    if not tool and char then
+        tool = char:FindFirstChild(itemName)
+    end
+    if not tool then return nil end
+
+    if tool.Parent == Player.Backpack then
+        pcall(function() hum:EquipTool(tool) end)
+        task.wait(0.08)
+    end
+
+    local deadline = tick() + 0.45
+    while tool.Parent ~= char and tick() < deadline do
+        task.wait(0.01)
+    end
+    return tool.Parent == char and tool or nil
+end
+
+local function CountSellable()
+    local c = 0
+    if Player.Backpack then
+        for _, tool in pairs(Player.Backpack:GetChildren()) do
+            if tool:IsA("Tool") and SellItems[tool.Name] and not ForceKeep[tool.Name] then c = c + 1 end
+        end
+    end
+    if Player.Character then
+        for _, tool in pairs(Player.Character:GetChildren()) do
+            if tool:IsA("Tool") and SellItems[tool.Name] and not ForceKeep[tool.Name] then c = c + 1 end
+        end
+    end
+    return c
+end
+
 local function SellAllWithDiagnostics(source, manualRequest)
+    -- prefer Inventory module if available
+    if InventoryModule and type(InventoryModule.SellAll) == "function" then
+        -- Inventory.SellAll(manual)
+        pcall(function() InventoryModule:SellAll(manualRequest == true) end)
+        -- allow it a moment to complete
+        task.wait(0.9)
+        return true, 0, 0, nil
+    end
+
     if not manualRequest and not AutoSell then
         return false, 0, 0, "AutoSell disabled"
     end
 
-    local toConsider = {}
-    if Player.Backpack then
-        for _, t in pairs(Player.Backpack:GetChildren()) do
-            if t:IsA("Tool") then
-                table.insert(toConsider, t)
-            end
-        end
-    end
-    if Player.Character then
-        for _, t in pairs(Player.Character:GetChildren()) do
-            if t:IsA("Tool") and t.Parent then
-                table.insert(toConsider, t)
-            end
-        end
+    local before = CountSellable()
+    if before == 0 then
+        return false, 0, 0, "No items"
     end
 
-    if #toConsider == 0 then
-        print("[Selling] No tools found to consider for selling.")
-        return false, 0, 0, "No tools"
+    -- find merchant prompt
+    local prompt = FindMerchantPrompt()
+    if not prompt then
+        return false, 0, 0, "Prompt not found"
     end
 
-    local hasSellableItems = false
-    for _, tool in ipairs(toConsider) do
-        if SellItems[tool.Name] then
-            hasSellableItems = true
-            break
-        end
-    end
-
-    if not hasSellableItems then
-        print("[Selling] No sellable items found; skipping merchant interaction.")
-        return false, 0, 0, "No sellable items"
-    end
-
-    print("[Selling] Found items to sell, teleporting to Merchant...")
-
+    -- move close to merchant
     local hrp = GetCharacter("HumanoidRootPart")
     local savedCFrame = hrp and hrp.CFrame
-
-    -- Locate Merchant and wait up to 3 seconds if server just loaded
-    local merchantCF = nil
-    local attempts = 0
-    while not merchantCF and attempts < 10 do
-        merchantCF = FindMerchantCFrame()
-        if not merchantCF then
-            task.wait(0.3)
-            attempts = attempts + 1
-        end
+    local parentPart = prompt.Parent
+    if hrp and parentPart and parentPart:IsA("BasePart") then
+        hrp.CFrame = parentPart.CFrame + Vector3.new(0, 3, 0)
+        task.wait(0.28)
     end
 
-    if hrp and merchantCF then
-        hrp.CFrame = merchantCF + Vector3.new(0, 3, 0)
-        task.wait(0.4)
-    else
-        print("[Selling] Warning: Merchant CFrame not found, attempting remote sale anyway...")
-    end
+    -- iterate sellable items (skip force-kept)
+    for itemName, enabled in pairs(SellItems) do
+        if enabled and not ForceKeep[itemName] then
+            -- attempt to sell all instances of this item
+            local attempts = 0
+            while (Player.Backpack and Player.Backpack:FindFirstChild(itemName)) or (Player.Character and Player.Character:FindFirstChild(itemName)) do
+                if attempts >= 8 then break end
+                local tool = EquipSellTool(itemName)
+                if not tool then break end
 
-    local function TrySellTool(toolInstance)
-        if not toolInstance or not toolInstance.Parent then return false end
-        local toolName = toolInstance.Name
-        local shouldSell = SellItems[toolName]
-        if not shouldSell then
-            return false
-        end
+                -- Trigger the merchant dialogue via prompt
+                pcall(function() fireproximityprompt(prompt) end)
+                task.wait(0.28)
 
-        local humanoid = GetCharacter("Humanoid")
-        if humanoid then
-            pcall(function()
-                humanoid:EquipTool(toolInstance)
-            end)
-            task.wait(0.2)
-        end
+                -- Click sell/all/confirm buttons if dialogue opens
+                HandleDialogue()
 
-        pcall(function()
-            local remote = GetCharacter("RemoteEvent")
-            if remote then
-                remote:FireServer("EndDialogue", {
-                    ["NPC"] = "Merchant",
-                    ["Dialogue"] = "Dialogue5",
-                    ["Option"] = "Option2"
-                })
+                -- small wait for server processing
+                task.wait(0.38)
+
+                -- sanity: if not decreased, try one remote fallback if available
+                local nowCount
+                pcall(function() nowCount = (Player.Backpack and #Player.Backpack:GetChildren() or 0) + (Player.Character and #Player.Character:GetChildren() or 0) end)
+
+                attempts = attempts + 1
             end
-        end)
-
-        print(("Sold: %s"):format(toolName))
-        task.wait(0.2)
-        return true
+        end
     end
 
-    for _, tool in ipairs(toConsider) do
-        TrySellTool(tool)
-    end
-
-    task.wait(0.5)
-
-    -- Restore player position back to safe zone / previous spot
+    -- restore position
     if hrp and savedCFrame then
         hrp.CFrame = savedCFrame
     end
@@ -187,43 +251,48 @@ end
 
 local function AutoSellScanAndSell()
     if not AutoSell then return end
-    SellAllWithDiagnostics("AutoSellScan", false)
+    if CountSellable() > 0 then
+        SellAllWithDiagnostics("AutoSellScan", false)
+    end
 end
 
 local function ShouldBuyLuckyArrow()
-    if not UpdateMoneyRef() then
-        return false
-    end
-    if BuyLucky ~= true then
-        return false
-    end
-    if Money.Value < 75000 then
-        return false
-    end
-    if GetLuckyArrowCount() >= 9 then
-        return false
-    end
+    if not UpdateMoneyRef() then return false end
+    if BuyLucky ~= true then return false end
+    if Money.Value < 75000 then return false end
+    if GetLuckyArrowCount() >= 9 then return false end
     return true
 end
 
 local function AttemptBuyLuckyBeforeHop()
-    if not ShouldBuyLuckyArrow() then
-        return
-    end
+    if not ShouldBuyLuckyArrow() then return end
 
-    print("Attempting to buy Lucky Arrow")
-    local attempts = 0
-    while attempts < 10 and ShouldBuyLuckyArrow() do
-        local remote = GetCharacter("RemoteEvent")
-        if remote then
-            remote:FireServer("PurchaseShopItem", {["ItemName"] = "1x Lucky Arrow"})
+    local bought = false
+    pcall(function()
+        local ModulesFolder = ReplicatedStorage:FindFirstChild("Modules")
+        if ModulesFolder then
+            local InventoryModuleObject = ModulesFolder:FindFirstChild("Inventory")
+            if InventoryModuleObject then
+                local ok, Inventory = pcall(function() return require(InventoryModuleObject) end)
+                if ok and Inventory and type(Inventory.BuyLucky) == "function" then
+                    Inventory:BuyLucky()
+                    bought = true
+                end
+            end
         end
-        attempts = attempts + 1
-        task.wait(0.5)
-    end
-    
-    if attempts > 0 then
-        print(("Sent %d Lucky Arrow purchase requests"):format(attempts))
+    end)
+
+    if not bought then
+        local attempts = 0
+        while attempts < 10 and ShouldBuyLuckyArrow() do
+            local char = Player.Character
+            local remote = char and char:FindFirstChild("RemoteEvent")
+            if remote then
+                remote:FireServer("PurchaseShopItem", {["ItemName"] = "1x Lucky Arrow"})
+            end
+            attempts = attempts + 1
+            task.wait(0.5)
+        end
     end
 end
 
