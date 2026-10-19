@@ -21,7 +21,7 @@ game:GetService("CoreGui").DescendantAdded:Connect(function(child)
     end
 end)
 
--- Anti-Cheat / Remote / Magnitude Hooks
+-- Anti-Cheat Hooks
 pcall(function()
     local UzuKeeIsRetardedAndDoesntKnowHowToMakeAnAntiCheatOnTheServerSideAlsoVexStfuIKnowTheCodeIsBadYouDontNeedToTellMe = "  ___XP DE KEY"
     local oldNc
@@ -188,6 +188,13 @@ local function RunItemFarm()
     ItemSpawnFolder.ChildAdded:Connect(function(Model)
         task.wait(0.5)
         if Model:IsA("Model") then
+            local primary = Model.PrimaryPart or Model:FindFirstChildWhichIsA("BasePart")
+            local timer = 0
+            while not primary and timer < 2 do
+                task.wait(0.2)
+                timer = timer + 0.2
+                primary = Model.PrimaryPart or Model:FindFirstChildWhichIsA("BasePart")
+            end
             local ItemInfo = GetItemInfo(Model)
             if ItemInfo then
                 table.insert(getgenv().SpawnedItems, { Model = Model, Info = ItemInfo })
@@ -208,34 +215,39 @@ local function RunItemFarm()
     local BodyVelocity = Instance.new("BodyVelocity")
     BodyVelocity.Velocity = Vector3.new(0, 0, 0)
 
-    -- Synchronous farm loop: blocks execution until all spawned items are collected
+    -- Synchronous collection loop until no more items are left
     repeat
         for i = #getgenv().SpawnedItems, 1, -1 do
             local entry = getgenv().SpawnedItems[i]
-            if not entry or not entry.Model or not entry.Model.Parent then
+            if not entry then
                 table.remove(getgenv().SpawnedItems, i)
             else
                 local Model = entry.Model
                 local ItemInfo = entry.Info
-                local HumanoidRootPart = GetCharacter("HumanoidRootPart")
-                if HumanoidRootPart then
-                    local Name = ItemInfo.Name
-                    if not HasMaxItem(Name) then
-                        local ProximityPrompt = ItemInfo.ProximityPrompt
-                        local Position = (Model.PrimaryPart and Model.PrimaryPart.Position) or ItemInfo.Position
 
-                        table.remove(getgenv().SpawnedItems, i)
+                if not Model or not Model.Parent then
+                    table.remove(getgenv().SpawnedItems, i)
+                else
+                    local HumanoidRootPart = GetCharacter("HumanoidRootPart")
+                    if HumanoidRootPart then
+                        local Name = ItemInfo.Name
+                        if not HasMaxItem(Name) then
+                            local ProximityPrompt = ItemInfo.ProximityPrompt
+                            local Position = (Model.PrimaryPart and Model.PrimaryPart:IsA("BasePart") and Model.PrimaryPart.Position) or ItemInfo.Position
 
-                        if ProximityPrompt and ProximityPrompt.Parent then
-                            BodyVelocity.Parent = HumanoidRootPart
-                            HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y - 25, Position.Z)
-                            task.wait(0.4)
-                            pcall(fireproximityprompt, ProximityPrompt)
-                            task.wait(0.55)
-                            HumanoidRootPart.CFrame = SafeZone
+                            table.remove(getgenv().SpawnedItems, i)
+
+                            if ProximityPrompt and ProximityPrompt.Parent then
+                                BodyVelocity.Parent = HumanoidRootPart
+                                HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y - 25, Position.Z)
+                                task.wait(.4)
+                                pcall(fireproximityprompt, ProximityPrompt)
+                                task.wait(.55)
+                                HumanoidRootPart.CFrame = SafeZone
+                            end
+                        else
+                            table.remove(getgenv().SpawnedItems, i)
                         end
-                    else
-                        table.remove(getgenv().SpawnedItems, i)
                     end
                 end
             end
@@ -251,5 +263,6 @@ end
 return {
     RunItemFarm = RunItemFarm,
     GoInvisible = GoInvisible,
-    TeleportTo = TeleportTo
+    TeleportTo = TeleportTo,
+    GetCharacter = GetCharacter
 }
