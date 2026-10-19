@@ -9,10 +9,10 @@ local PlayerGui = Player:WaitForChild("PlayerGui")
 
 -- Throttle / anti-kick settings (tweak if needed)
 local FarmSettings = {
-    MinDelay = 0.45,    -- minimum random delay for approach/post-fire (seconds)
-    MaxDelay = 0.9,     -- maximum random delay
-    BatchSize = 2,      -- number of items to pickup before returning to SafeZone
-    OuterWait = 1.2     -- wait between farm loops
+    MinDelay = 0.4,    -- minimum random delay for approach/post-fire (seconds)
+    MaxDelay = 0.8,    -- maximum random delay
+    BatchSize = 3,     -- number of items to pickup before returning to SafeZone
+    OuterWait = 1.0    -- wait between farm loops
 }
 
 math.randomseed(tick() % 1 * 100000)
@@ -184,7 +184,7 @@ local function GetItemInfo(Model)
             end
         end
         if ProximityPrompt and Position then
-            return {["Name"] = ProximityPrompt.ObjectText, ["ProximityPrompt"] = ProximityPrompt, ["Position"] = Position}
+            return { ["Name"] = ProximityPrompt.ObjectText, ["ProximityPrompt"] = ProximityPrompt, ["Position"] = Position }
         end
     end
     return nil
@@ -207,12 +207,12 @@ local function GetSortedSpawnedItems(spawned)
             local pos = entry.Model.PrimaryPart.Position
             local d2 = myPos and (pos - myPos).Magnitude or math.huge
             local priority = PriorityItems[entry.Info.Name] and 0 or 1
-            table.insert(list, {idx = i, dist = d2, prio = priority, entry = entry})
+            table.insert(list, { idx = i, dist = d2, prio = priority, entry = entry })
         else
             table.remove(spawned, i)
         end
     end
-    table.sort(list, function(a,b)
+    table.sort(list, function(a, b)
         if a.prio ~= b.prio then return a.prio < b.prio end
         return a.dist < b.dist
     end)
@@ -221,7 +221,7 @@ end
 
 local function RunItemFarm()
     GoInvisible()
-    task.wait(1.2)
+    task.wait(0.8)
     TeleportTo(CFrame.new(978, -42, -49))
 
     local ItemSpawnFolder = Workspace:WaitForChild("Item_Spawns"):WaitForChild("Items")
@@ -287,23 +287,36 @@ local function RunItemFarm()
                             -- attach BodyVelocity once and use a small offset to reliably trigger prompt
                             BodyVelocity.Parent = HumanoidRootPart
                             -- prefer approaching from above to avoid collisions
-                            HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y - 18, Position.Z)
+                            HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y + 18, Position.Z)
 
                             -- adaptive, randomized delays to avoid being too deterministic and to accomodate ping
-                            local approachWait = RndDelay() * 0.45 -- shorter approach
+                            local approachWait = RndDelay() * 0.7
                             local postWait = RndDelay()
                             task.wait(approachWait)
 
                             pcall(fireproximityprompt, ProximityPrompt)
 
-                            task.wait(postWait)
+                            -- priority items get a slightly longer post-wait
+                            if PriorityItems[Name] then
+                                task.wait(postWait * 1.2 + 0.25)
+                            else
+                                task.wait(postWait)
+                            end
 
                             batchCount = batchCount + 1
 
-                            -- for very high-value items, return immediately to safe zone to ensure stability
+                            -- return to safe zone only when batch is done or for priority items
                             if PriorityItems[Name] or batchCount >= FarmSettings.BatchSize then
-                                HumanoidRootPart.CFrame = SafeZone
-                                task.wait(0.25 + math.random() * 0.25)
+                                -- only teleport back if we're far away to minimize movement
+                                local ok, dist = pcall(function()
+                                    return (HumanoidRootPart.Position - SafeZone.p).Magnitude
+                                end)
+                                if ok and dist and dist > 12 then
+                                    HumanoidRootPart.CFrame = SafeZone
+                                    task.wait(0.28 + math.random() * 0.4)
+                                else
+                                    task.wait(0.18 + math.random() * 0.18)
+                                end
                                 batchCount = 0
                             else
                                 -- small pause between batched pickups
@@ -321,10 +334,19 @@ local function RunItemFarm()
                     end
                 end
             end
-            task.wait(0.12) -- increased throttle between processing items
+            task.wait(0.18 + math.random() * 0.14) -- moderate throttle between processing items
         end
         task.wait(FarmSettings.OuterWait)
     until #getgenv().SpawnedItems == 0
+
+    -- Ensure we are safely at SafeZone BEFORE removing BodyVelocity to avoid falling into void
+    pcall(function()
+        local hrp = GetCharacter("HumanoidRootPart")
+        if hrp then
+            hrp.CFrame = SafeZone
+            task.wait(0.18)
+        end
+    end)
 
     if BodyVelocity and BodyVelocity.Parent then
         BodyVelocity:Destroy()
