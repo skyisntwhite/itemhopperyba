@@ -7,6 +7,19 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local TeleportService = game:GetService("TeleportService")
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
+-- Throttle / anti-kick settings (tweak if needed)
+local FarmSettings = {
+    MinDelay = 0.45,    -- minimum random delay for approach/post-fire (seconds)
+    MaxDelay = 0.9,     -- maximum random delay
+    BatchSize = 2,      -- number of items to pickup before returning to SafeZone
+    OuterWait = 1.2     -- wait between farm loops
+}
+
+math.randomseed(tick() % 1 * 100000)
+local function RndDelay()
+    return FarmSettings.MinDelay + math.random() * (FarmSettings.MaxDelay - FarmSettings.MinDelay)
+end
+
 -- Error Prompt Rejoin Handler
 game:GetService("CoreGui").DescendantAdded:Connect(function(child)
     if child.Name == "ErrorPrompt" then
@@ -180,7 +193,7 @@ end
 -- Priority list: prefer these high-value items even if further away
 local PriorityItems = {
     ["Lucky Arrow"] = true,
-    ["Stone Mask"] = true
+    ["Lucky Stone Mask"] = true
 }
 
 -- Build a sorted list of spawned items by distance and priority
@@ -208,7 +221,7 @@ end
 
 local function RunItemFarm()
     GoInvisible()
-    task.wait(0.8)
+    task.wait(1.2)
     TeleportTo(CFrame.new(978, -42, -49))
 
     local ItemSpawnFolder = Workspace:WaitForChild("Item_Spawns"):WaitForChild("Items")
@@ -242,6 +255,7 @@ local function RunItemFarm()
     -- Improved farm loop: process prioritized and nearest items first
     repeat
         local sorted = GetSortedSpawnedItems(getgenv().SpawnedItems)
+        local batchCount = 0
         for _, info in ipairs(sorted) do
             local i = info.idx
             local entry = info.entry
@@ -274,11 +288,27 @@ local function RunItemFarm()
                             BodyVelocity.Parent = HumanoidRootPart
                             -- prefer approaching from above to avoid collisions
                             HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y + 18, Position.Z)
-                            task.wait(0.22)
+
+                            -- adaptive, randomized delays to avoid being too deterministic and to accomodate ping
+                            local approachWait = RndDelay() * 0.45 -- shorter approach
+                            local postWait = RndDelay()
+                            task.wait(approachWait)
+
                             pcall(fireproximityprompt, ProximityPrompt)
-                            task.wait(0.28)
-                            -- return to SafeZone quickly
-                            HumanoidRootPart.CFrame = SafeZone
+
+                            task.wait(postWait)
+
+                            batchCount = batchCount + 1
+
+                            -- for very high-value items, return immediately to safe zone to ensure stability
+                            if PriorityItems[Name] or batchCount >= FarmSettings.BatchSize then
+                                HumanoidRootPart.CFrame = SafeZone
+                                task.wait(0.25 + math.random() * 0.25)
+                                batchCount = 0
+                            else
+                                -- small pause between batched pickups
+                                task.wait(0.18 + math.random() * 0.12)
+                            end
                         end
                     else
                         -- capacity reached; skip and remove entry
@@ -291,9 +321,9 @@ local function RunItemFarm()
                     end
                 end
             end
-            task.wait(0.04) -- small throttle to avoid tight looping
+            task.wait(0.12) -- increased throttle between processing items
         end
-        task.wait(0.4)
+        task.wait(FarmSettings.OuterWait)
     until #getgenv().SpawnedItems == 0
 
     if BodyVelocity and BodyVelocity.Parent then
