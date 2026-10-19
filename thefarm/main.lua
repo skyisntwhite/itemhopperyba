@@ -131,7 +131,7 @@ task.spawn(function()
     end
 end)
 
-game:GetService("RunService"):Set3dRenderingEnabled(false)
+game:GetService("RunService"):Set3dRenderingEnabled(true)
 
 -- HUD & Loading Screens Cleanup
 if not PlayerGui:FindFirstChild("HUD") then
