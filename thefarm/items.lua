@@ -294,7 +294,7 @@ local function RunItemFarm()
                             -- attach BodyVelocity once and use a small offset to reliably trigger prompt
                             BodyVelocity.Parent = HumanoidRootPart
                             -- position UNDER the item for more reliable pickup
-                            HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y - 3, Position.Z)
+                            HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y - 25, Position.Z)
 
                             -- adaptive, randomized delays to avoid being too deterministic and to accommodate ping
                             local approachWait = RndDelay() * 0.5
