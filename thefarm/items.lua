@@ -1,4 +1,4 @@
--- items.lua
+-- items.lua (Fixed & Optimized)
 local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
@@ -56,7 +56,7 @@ local MaxItemAmounts = {
     ["Mysterious Arrow"] = 25, ["Diamond"] = 30, ["Ancient Scroll"] = 10,
     ["Caesar's Headband"] = 10, ["Stone Mask"] = 10, ["Rib Cage of The Saint's Corpse"] = 20,
     ["Quinton's Glove"] = 10, ["Zeppeli's Hat"] = 10, ["Lucky Arrow"] = 10,
-    ["Clackers"] = 10, ["Steel Ball"] = 10, ["Dio's Diary"] = 10
+    ["Lucky Stone Mask"] = 10, ["Clackers"] = 10, ["Steel Ball"] = 10, ["Dio's Diary"] = 10
 }
 
 if Has2x then
@@ -156,6 +156,13 @@ local function HasMaxItem(Item)
             if Tool.Name == Item then Count += 1 end
         end
     end
+    if Player.Character then
+        for _, Tool in pairs(Player.Character:GetChildren()) do
+            if Tool:IsA("Tool") and Tool.Name == Item then
+                Count += 1
+            end
+        end
+    end
     return MaxItemAmounts[Item] and Count >= MaxItemAmounts[Item] or false
 end
 
@@ -215,49 +222,47 @@ local function RunItemFarm()
     local BodyVelocity = Instance.new("BodyVelocity")
     BodyVelocity.Velocity = Vector3.new(0, 0, 0)
 
-    -- Synchronous collection loop until no more items are left
-    repeat
-        for i = #getgenv().SpawnedItems, 1, -1 do
-            local entry = getgenv().SpawnedItems[i]
-            if not entry then
-                table.remove(getgenv().SpawnedItems, i)
-            else
-                local Model = entry.Model
-                local ItemInfo = entry.Info
-
-                if not Model or not Model.Parent then
+    -- Continuous background collection loop (fixes the termination issue)
+    task.spawn(function()
+        while true do
+            for i = #getgenv().SpawnedItems, 1, -1 do
+                local entry = getgenv().SpawnedItems[i]
+                if not entry then
                     table.remove(getgenv().SpawnedItems, i)
                 else
-                    local HumanoidRootPart = GetCharacter("HumanoidRootPart")
-                    if HumanoidRootPart then
-                        local Name = ItemInfo.Name
-                        if not HasMaxItem(Name) then
-                            local ProximityPrompt = ItemInfo.ProximityPrompt
-                            local Position = (Model.PrimaryPart and Model.PrimaryPart:IsA("BasePart") and Model.PrimaryPart.Position) or ItemInfo.Position
+                    local Model = entry.Model
+                    local ItemInfo = entry.Info
 
-                            table.remove(getgenv().SpawnedItems, i)
+                    if not Model or not Model.Parent then
+                        table.remove(getgenv().SpawnedItems, i)
+                    else
+                        local HumanoidRootPart = GetCharacter("HumanoidRootPart")
+                        if HumanoidRootPart then
+                            local Name = ItemInfo.Name
+                            if not HasMaxItem(Name) then
+                                local ProximityPrompt = ItemInfo.ProximityPrompt
+                                local Position = (Model.PrimaryPart and Model.PrimaryPart:IsA("BasePart") and Model.PrimaryPart.Position) or ItemInfo.Position
 
-                            if ProximityPrompt and ProximityPrompt.Parent then
-                                BodyVelocity.Parent = HumanoidRootPart
-                                HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y - 25, Position.Z)
-                                task.wait(.4)
-                                pcall(fireproximityprompt, ProximityPrompt)
-                                task.wait(.55)
-                                HumanoidRootPart.CFrame = SafeZone
+                                table.remove(getgenv().SpawnedItems, i)
+
+                                if ProximityPrompt and ProximityPrompt.Parent then
+                                    BodyVelocity.Parent = HumanoidRootPart
+                                    HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y - 25, Position.Z)
+                                    task.wait(.4)
+                                    pcall(fireproximityprompt, ProximityPrompt)
+                                    task.wait(.55)
+                                    HumanoidRootPart.CFrame = SafeZone
+                                end
+                            else
+                                table.remove(getgenv().SpawnedItems, i)
                             end
-                        else
-                            table.remove(getgenv().SpawnedItems, i)
                         end
                     end
                 end
             end
+            task.wait(0.6)
         end
-        task.wait(0.6)
-    until #getgenv().SpawnedItems == 0
-
-    if BodyVelocity and BodyVelocity.Parent then
-        BodyVelocity:Destroy()
-    end
+    end)
 end
 
 return {
