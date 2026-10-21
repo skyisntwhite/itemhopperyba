@@ -150,9 +150,17 @@ local function SellAllWithDiagnostics(source, manualRequest)
         return false, 0, 0, "AutoSell disabled"
     end
 
+    -- Give the server a brief moment to replicate items into the backpack after collection
+    task.wait(0.4)
+
     local before = CountSellable()
     if before == 0 then
-        return false, 0, 0, "No items"
+        -- Double-check with a second short pause in case of network lag
+        task.wait(0.4)
+        before = CountSellable()
+        if before == 0 then
+            return false, 0, 0, "No items"
+        end
     end
 
     local prompt = FindMerchantPrompt()
