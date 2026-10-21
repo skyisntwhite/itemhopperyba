@@ -1,48 +1,68 @@
--- selling.lua (Stable & Crash-Proof)
-local Config = ... or (getgenv and getgenv().YBAFarmSettings) or {}
+-- items.lua (Stable & Corrected)
 local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local TeleportService = game:GetService("TeleportService")
+local PlayerGui = Player:WaitForChild("PlayerGui")
 
-local BuyLucky = Config.BuyLucky ~= nil and Config.BuyLucky or true
-local AutoSell = Config.AutoSell ~= nil and Config.AutoSell or true
-local SellItems = Config.SellItems or {}
-local Money = nil
+-- Error Prompt Rejoin Handler
+game:GetService("CoreGui").DescendantAdded:Connect(function(child)
+    if child.Name == "ErrorPrompt" then
+        local GrabError = child:FindFirstChild("ErrorMessage", true)
+        if GrabError then
+            repeat task.wait() until GrabError.Text ~= "Label"
+            local Reason = GrabError.Text
+            if Reason:match("kick") or Reason:match("You") or Reason:match("conn") or Reason:match("rejoin") then
+                TeleportService:Teleport(2809202155, Player)
+            end
+        end
+    end
+end)
 
-local ForceKeep = {
-    ["Lucky Arrow"] = true,
-    ["Lucky Stone Mask"] = true,
+-- Anti-Cheat Hooks
+pcall(function()
+    local UzuKeeIsRetardedAndDoesntKnowHowToMakeAnAntiCheatOnTheServerSideAlsoVexStfuIKnowTheCodeIsBadYouDontNeedToTellMe = "  ___XP DE KEY"
+    local oldNc
+    oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        local Method = getnamecallmethod()
+        local Args = {...}
+        if not checkcaller() and rawequal(self.Name, "Returner") and rawequal(Args[1], "idklolbrah2de") then
+            return UzuKeeIsRetardedAndDoesntKnowHowToMakeAnAntiCheatOnTheServerSideAlsoVexStfuIKnowTheCodeIsBadYouDontNeedToTellMe
+        end
+        return oldNc(self, ...)
+    end))
+end)
+
+pcall(function()
+    local oldMagnitude
+    oldMagnitude = hookmetamethod(Vector3.new(), "__index", newcclosure(function(self, index)
+        local CallingScript = tostring(getcallingscript())
+        if not checkcaller() and index == "magnitude" and CallingScript == "ItemSpawn" then
+            return 0
+        end
+        return oldMagnitude(self, index)
+    end))
+end)
+
+local Has2x = false
+pcall(function()
+    Has2x = MarketplaceService:UserOwnsGamePassAsync(Player.UserId, 14597778)
+end)
+
+local MaxItemAmounts = {
+    ["Gold Coin"] = 45, ["Rokakaka"] = 25, ["Pure Rokakaka"] = 10,
+    ["Mysterious Arrow"] = 25, ["Diamond"] = 30, ["Ancient Scroll"] = 10,
+    ["Caesar's Headband"] = 10, ["Stone Mask"] = 10, ["Rib Cage of The Saint's Corpse"] = 20,
+    ["Quinton's Glove"] = 10, ["Zeppeli's Hat"] = 10, ["Lucky Arrow"] = 10,
+    ["Lucky Stone Mask"] = 10, ["Clackers"] = 10, ["Steel Ball"] = 10, ["Dio's Diary"] = 10
 }
 
-local function UpdateMoneyRef()
-    if Player and Player:FindFirstChild("PlayerStats") then
-        Money = Player.PlayerStats:FindFirstChild("Money")
-        return Money ~= nil
+if Has2x then
+    for Index, Max in pairs(MaxItemAmounts) do
+        MaxItemAmounts[Index] = Max * 2
     end
-    return false
-end
-
-local function GetLuckyArrowCount()
-    local Count = 0
-    pcall(function()
-        local invFolder = Player:WaitForChild("PlayerStats", 2):WaitForChild("Inventory", 2)
-        for _, item in pairs(invFolder:GetChildren()) do
-            if item.Name == "Lucky Arrow" then Count += 1 end
-        end
-    end)
-    if Player.Backpack then
-        for _, tool in pairs(Player.Backpack:GetChildren()) do
-            if tool.Name == "Lucky Arrow" then Count += 1 end
-        end
-    end
-    if Player.Character then
-        for _, tool in pairs(Player.Character:GetChildren()) do
-            if tool.Name == "Lucky Arrow" then Count += 1 end
-        end
-    end
-    return Count
 end
 
 local function GetCharacter(Part)
@@ -56,178 +76,201 @@ local function GetCharacter(Part)
     return nil
 end
 
-local function ClickButton(btn)
-    if not btn or not btn.Parent then return false end
-    if type(firesignal) == "function" then
-        local ok = pcall(function() firesignal(btn.MouseButton1Click) end)
-        if ok then return true end
+local function TeleportTo(Position)
+    local HumanoidRootPart = GetCharacter("HumanoidRootPart")
+    if HumanoidRootPart and typeof(Position) == "CFrame" then
+        HumanoidRootPart.CFrame = Position
     end
-    local ok = pcall(function() if btn.Activate then btn:Activate() end end)
-    return ok
 end
 
-local function HandleDialogue()
-    local deadline = tick() + 1.5
-    while tick() < deadline do
-        local dlg = Player.PlayerGui:FindFirstChild("DialogueGui") or Player.PlayerGui:FindFirstChild("Dialogue")
-        if dlg then
-            for _, obj in ipairs(dlg:GetDescendants()) do
-                if obj:IsA("TextButton") and obj.Visible then
-                    local text = tostring(obj.Text or ""):lower()
-                    if text:find("sell") or text:find("all") or text:find("yes") or text:find("ok") or text:find("confirm") or text:find("deal") or text:find("option1") then
-                        ClickButton(obj)
-                        task.wait(0.12)
-                    end
+local function ApplyNoClip()
+    if not Player.Character then return end
+    for _, part in pairs(Player.Character:GetDescendants()) do
+        if part:IsA("BasePart") or part:IsA("UnionOperation") then
+            part.CanCollide = false
+        end
+    end
+end
+RunService.Heartbeat:Connect(ApplyNoClip)
+
+local function GoInvisible()
+    if not Player or not Player.Character then return end
+    local char = Player.Character
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not hrp then return end
+
+    local prevAutoRotate = humanoid.AutoRotate
+    local HUD = PlayerGui:FindFirstChild("HUD")
+    if HUD then HUD.Parent = nil end
+
+    pcall(function()
+        local a = Instance.new("Animation")
+        a.AnimationId = "rbxassetid://7189062263"
+        local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid
+        local track = animator:LoadAnimation(a)
+        track.Priority = Enum.AnimationPriority.Action4
+        track:Play()
+        track:AdjustSpeed(0)
+        track.TimePosition = 5
+        Player.Character = nil
+        task.wait(0.03)
+        Player.Character = char
+        track:Stop()
+    end)
+
+    local existing = char:FindFirstChild("InvisibilityHighlight")
+    if existing then existing:Destroy() end
+    local Highlight = Instance.new("Highlight")
+    Highlight.Name = "InvisibilityHighlight"
+    Highlight.Parent = char
+
+    pcall(function()
+        humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+        humanoid.NameDisplayDistance = 0
+        humanoid.AutoRotate = prevAutoRotate
+    end)
+
+    if HUD then HUD.Parent = PlayerGui end
+end
+
+-- Animation blocker loop
+task.spawn(function()
+    while task.wait(0.15) do
+        local hum = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
+                local id = track.Animation and track.Animation.AnimationId
+                if id and id ~= "rbxassetid://7189062263" then
+                    pcall(function() track:Stop() end)
                 end
             end
         end
-        task.wait(0.05)
     end
+end)
+
+local function HasMaxItem(Item)
+    local Count = 0
+    if Player.Backpack then
+        for _, Tool in pairs(Player.Backpack:GetChildren()) do
+            if Tool.Name == Item then Count += 1 end
+        end
+    end
+    if Player.Character then
+        for _, Tool in pairs(Player.Character:GetChildren()) do
+            if Tool:IsA("Tool") and Tool.Name == Item then
+                Count += 1
+            end
+        end
+    end
+    return MaxItemAmounts[Item] and Count >= MaxItemAmounts[Item] or false
 end
 
-local function FindMerchantPrompt()
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.MaxActivationDistance ~= 0 then
-            local parent = obj.Parent
-            local matchedMerchant = false
-            local depth = 0
-            while parent and parent ~= Workspace and depth < 6 do
-                local name = tostring(parent.Name):lower()
-                if name:find("merchant", 1, true) or name:find("shiftplox", 1, true) then
-                    matchedMerchant = true
-                    break
-                end
-                parent = parent.Parent
-                depth += 1
+local function GetItemInfo(Model)
+    if Model and Model:IsA("Model") and Model.Parent and Model.Parent.Name == "Items" then
+        local PrimaryPart = Model.PrimaryPart or Model:FindFirstChildWhichIsA("BasePart")
+        local Position = PrimaryPart and PrimaryPart.Position
+        local ProximityPrompt
+        for _, ItemInstance in pairs(Model:GetDescendants()) do
+            if ItemInstance:IsA("ProximityPrompt") and ItemInstance.MaxActivationDistance == 8 then
+                ProximityPrompt = ItemInstance
+                break
             end
-            local objText = tostring(obj.ObjectText or ""):lower()
-            local actText = tostring(obj.ActionText or ""):lower()
-            if matchedMerchant or objText:find("merchant", 1, true) or actText:find("merchant", 1, true) then
-                return obj
-            end
+        end
+        if ProximityPrompt and Position then
+            return {["Name"] = ProximityPrompt.ObjectText, ["ProximityPrompt"] = ProximityPrompt, ["Position"] = Position}
         end
     end
     return nil
 end
 
-local function EquipSellTool(itemName)
-    local char = Player.Character
-    local hum = char and char:FindFirstChildWhichIsA("Humanoid")
-    if not hum then return nil end
+local function RunItemFarm()
+    GoInvisible()
+    task.wait(1)
+    TeleportTo(CFrame.new(978, -42, -49))
+    
+    local ItemSpawnFolder = Workspace:WaitForChild("Item_Spawns"):WaitForChild("Items")
+    getgenv().SpawnedItems = {}
 
-    local tool = Player.Backpack:FindFirstChild(itemName) or (char and char:FindFirstChild(itemName))
-    if not tool then return nil end
-
-    if tool.Parent == Player.Backpack then
-        pcall(function() hum:EquipTool(tool) end)
-        task.wait(0.05)
-    end
-
-    local deadline = tick() + 0.4
-    while tool.Parent ~= char and tick() < deadline do
-        task.wait(0.01)
-    end
-    return tool.Parent == char and tool or nil
-end
-
-local function CountSellable()
-    local c = 0
-    if Player.Backpack then
-        for _, tool in pairs(Player.Backpack:GetChildren()) do
-            if tool:IsA("Tool") and SellItems[tool.Name] and not ForceKeep[tool.Name] then c += 1 end
-        end
-    end
-    if Player.Character then
-        for _, tool in pairs(Player.Character:GetChildren()) do
-            if tool:IsA("Tool") and SellItems[tool.Name] and not ForceKeep[tool.Name] then c += 1 end
-        end
-    end
-    return c
-end
-
-local function SellAllWithDiagnostics(source, manualRequest)
-    if not manualRequest and not AutoSell then
-        return false, 0, 0, "AutoSell disabled"
-    end
-
-    local before = CountSellable()
-    if before == 0 then
-        return false, 0, 0, "No items"
-    end
-
-    local prompt = FindMerchantPrompt()
-    if not prompt then
-        return false, 0, 0, "Prompt not found"
-    end
-
-    local hrp = GetCharacter("HumanoidRootPart")
-    local savedCFrame = hrp and hrp.CFrame
-    local parentPart = prompt.Parent
-    if hrp and parentPart and parentPart:IsA("BasePart") then
-        hrp.CFrame = parentPart.CFrame + Vector3.new(0, 3, 0)
-        task.wait(0.2)
-    end
-
-    for itemName, enabled in pairs(SellItems) do
-        if enabled and not ForceKeep[itemName] then
-            local attempts = 0
-            while (Player.Backpack and Player.Backpack:FindFirstChild(itemName)) or (Player.Character and Player.Character:FindFirstChild(itemName)) do
-                if attempts >= 6 then break end
-                local tool = EquipSellTool(itemName)
-                if not tool then break end
-
-                pcall(function() fireproximityprompt(prompt) end)
-                task.wait(0.2)
-
-                HandleDialogue()
-                task.wait(0.3)
-
-                attempts += 1
+    -- Scan items already present on the ground upon server join
+    for _, Model in ipairs(ItemSpawnFolder:GetChildren()) do
+        if Model:IsA("Model") then
+            local ItemInfo = GetItemInfo(Model)
+            if ItemInfo then
+                table.insert(getgenv().SpawnedItems, { Model = Model, Info = ItemInfo })
             end
         end
     end
 
-    if hrp and savedCFrame then
-        hrp.CFrame = savedCFrame
-    end
-
-    return true, 0, 0, nil
-end
-
-local function AutoSellScanAndSell()
-    if not AutoSell then return end
-    if CountSellable() > 0 then
-        SellAllWithDiagnostics("AutoSellScan", false)
-    end
-end
-
-local function ShouldBuyLuckyArrow()
-    if not UpdateMoneyRef() then return false end
-    if BuyLucky ~= true then return false end
-    if Money.Value < 75000 then return false end
-    if GetLuckyArrowCount() >= 9 then return false end
-    return true
-end
-
-local function AttemptBuyLuckyBeforeHop()
-    if not ShouldBuyLuckyArrow() then return end
-
-    local attempts = 0
-    while attempts < 10 and ShouldBuyLuckyArrow() do
-        local char = Player.Character
-        local remote = char and char:FindFirstChild("RemoteEvent")
-        if remote then
-            remote:FireServer("PurchaseShopItem", {["ItemName"] = "1x Lucky Arrow"})
+    ItemSpawnFolder.ChildAdded:Connect(function(Model)
+        task.wait(0.5)
+        if Model:IsA("Model") then
+            local primary = Model.PrimaryPart or Model:FindFirstChildWhichIsA("BasePart")
+            local timer = 0
+            while not primary and timer < 2 do
+                task.wait(0.2)
+                timer = timer + 0.2
+                primary = Model.PrimaryPart or Model:FindFirstChildWhichIsA("BasePart")
+            end
+            local ItemInfo = GetItemInfo(Model)
+            if ItemInfo then
+                table.insert(getgenv().SpawnedItems, { Model = Model, Info = ItemInfo })
+            end
         end
-        attempts += 1
-        task.wait(0.4)
+    end)
+
+    local SafeZone = CFrame.new(978, -42, -49)
+    local BodyVelocity = Instance.new("BodyVelocity")
+    BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+
+    -- Standard synchronous collection loop until map is cleared
+    repeat
+        for i = #getgenv().SpawnedItems, 1, -1 do
+            local entry = getgenv().SpawnedItems[i]
+            if not entry then
+                table.remove(getgenv().SpawnedItems, i)
+            else
+                local Model = entry.Model
+                local ItemInfo = entry.Info
+
+                if not Model or not Model.Parent then
+                    table.remove(getgenv().SpawnedItems, i)
+                else
+                    local HumanoidRootPart = GetCharacter("HumanoidRootPart")
+                    if HumanoidRootPart then
+                        local Name = ItemInfo.Name
+                        if not HasMaxItem(Name) then
+                            local ProximityPrompt = ItemInfo.ProximityPrompt
+                            local Position = (Model.PrimaryPart and Model.PrimaryPart:IsA("BasePart") and Model.PrimaryPart.Position) or ItemInfo.Position
+
+                            table.remove(getgenv().SpawnedItems, i)
+
+                            if ProximityPrompt and ProximityPrompt.Parent then
+                                BodyVelocity.Parent = HumanoidRootPart
+                                HumanoidRootPart.CFrame = CFrame.new(Position.X, Position.Y - 25, Position.Z)
+                                task.wait(.4)
+                                pcall(fireproximityprompt, ProximityPrompt)
+                                task.wait(.55)
+                                HumanoidRootPart.CFrame = SafeZone
+                            end
+                        else
+                            table.remove(getgenv().SpawnedItems, i)
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.6)
+    until #getgenv().SpawnedItems == 0
+
+    if BodyVelocity and BodyVelocity.Parent then
+        BodyVelocity:Destroy()
     end
 end
 
 return {
-    UpdateMoneyRef = UpdateMoneyRef,
-    GetLuckyArrowCount = GetLuckyArrowCount,
-    SellAllWithDiagnostics = SellAllWithDiagnostics,
-    AutoSellScanAndSell = AutoSellScanAndSell,
-    AttemptBuyLuckyBeforeHop = AttemptBuyLuckyBeforeHop
+    RunItemFarm = RunItemFarm,
+    GoInvisible = GoInvisible,
+    TeleportTo = TeleportTo,
+    GetCharacter = GetCharacter
 }
