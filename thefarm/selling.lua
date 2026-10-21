@@ -1,14 +1,14 @@
--- selling.lua (Upgraded with Inventory_2 pacing & dialogue-scoring mechanics)
-local Config = ...
+-- selling.lua (Safe Config Fallback & Upgraded Pacing)
+local Config = ... or (getgenv and getgenv().YBAFarmSettings) or {}
 local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local TeleportService = game:GetService("TeleportService")
 
-local BuyLucky = Config.BuyLucky
-local AutoSell = Config.AutoSell
-local SellItems = Config.SellItems
+local BuyLucky = Config.BuyLucky ~= nil and Config.BuyLucky or true
+local AutoSell = Config.AutoSell ~= nil and Config.AutoSell or true
+local SellItems = Config.SellItems or {}
 local Money = nil
 
 -- keep list (always protect these)
@@ -58,17 +58,15 @@ local function GetCharacter(Part)
     return nil
 end
 
--- Robust fast click helper (inspired by Inventory_2.lua)
+-- Robust fast click helper
 local function ClickButton(btn)
     if not btn or not btn.Parent then return false end
     
-    -- Preferred path: firesignal
     if type(firesignal) == "function" then
         local ok = pcall(function() firesignal(btn.MouseButton1Click) end)
         if ok then return true end
     end
     
-    -- Executor connection fallback
     if type(getconnections) == "function" then
         local ok, conns = pcall(function() return getconnections(btn.MouseButton1Click) end)
         if ok and type(conns) == "table" then
@@ -84,12 +82,11 @@ local function ClickButton(btn)
         end
     end
 
-    -- Standard GUI activate fallback
     local ok = pcall(function() if btn.Activate then btn:Activate() end end)
     return ok
 end
 
--- Text normalization & intent scoring (derived from Inventory_2.lua)
+-- Text normalization & intent scoring
 local function NormalizeText(text)
     text = tostring(text or ""):lower()
     text = text:gsub("[%c%p]", " ")
@@ -221,7 +218,6 @@ local function CountSellable()
 end
 
 local function SellAllWithDiagnostics(source, manualRequest)
-    -- prefer Inventory module if available
     if InventoryModule and type(InventoryModule.SellAll) == "function" then
         pcall(function() InventoryModule:SellAll(manualRequest == true) end)
         task.wait(0.4)
