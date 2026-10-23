@@ -130,16 +130,33 @@ local function EquipSellTool(itemName)
     return tool.Parent == char and tool or nil
 end
 
+local function ShouldSellItem(itemName)
+    if not itemName then
+        return false
+    end
+
+    if ForceKeep[itemName] then
+        return false
+    end
+
+    local setting = SellItems[itemName]
+    return setting == true
+end
+
 local function CountSellable()
     local c = 0
     if Player.Backpack then
         for _, tool in pairs(Player.Backpack:GetChildren()) do
-            if tool:IsA("Tool") and SellItems[tool.Name] and not ForceKeep[tool.Name] then c += 1 end
+            if tool:IsA("Tool") and ShouldSellItem(tool.Name) then
+                c += 1
+            end
         end
     end
     if Player.Character then
         for _, tool in pairs(Player.Character:GetChildren()) do
-            if tool:IsA("Tool") and SellItems[tool.Name] and not ForceKeep[tool.Name] then c += 1 end
+            if tool:IsA("Tool") and ShouldSellItem(tool.Name) then
+                c += 1
+            end
         end
     end
     return c
@@ -150,12 +167,10 @@ local function SellAllWithDiagnostics(source, manualRequest)
         return false, 0, 0, "AutoSell disabled"
     end
 
-    -- Give the server a brief moment to replicate items into the backpack after collection
     task.wait(0.4)
 
     local before = CountSellable()
     if before == 0 then
-        -- Double-check with a second short pause in case of network lag
         task.wait(0.4)
         before = CountSellable()
         if before == 0 then
@@ -177,7 +192,7 @@ local function SellAllWithDiagnostics(source, manualRequest)
     end
 
     for itemName, enabled in pairs(SellItems) do
-        if enabled and not ForceKeep[itemName] then
+        if enabled == true and not ForceKeep[itemName] then
             local attempts = 0
             while (Player.Backpack and Player.Backpack:FindFirstChild(itemName)) or (Player.Character and Player.Character:FindFirstChild(itemName)) do
                 if attempts >= 6 then break end
@@ -225,7 +240,7 @@ local function AttemptBuyLuckyBeforeHop()
         local char = Player.Character
         local remote = char and char:FindFirstChild("RemoteEvent")
         if remote then
-            remote:FireServer("PurchaseShopItem", {["ItemName"] = "1x Lucky Arrow"})
+            remote:FireServer("PurchaseShopItem", { ["ItemName"] = "1x Lucky Arrow" })
         end
         attempts += 1
         task.wait(0.4)
@@ -237,5 +252,7 @@ return {
     GetLuckyArrowCount = GetLuckyArrowCount,
     SellAllWithDiagnostics = SellAllWithDiagnostics,
     AutoSellScanAndSell = AutoSellScanAndSell,
-    AttemptBuyLuckyBeforeHop = AttemptBuyLuckyBeforeHop
+    AttemptBuyLuckyBeforeHop = AttemptBuyLuckyBeforeHop,
+    ShouldSellItem = ShouldSellItem,
+    CountSellable = CountSellable,
 }
