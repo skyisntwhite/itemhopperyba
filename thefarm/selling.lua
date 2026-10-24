@@ -4,12 +4,19 @@ local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
-local TeleportService = game:GetService("TeleportService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local BuyLucky = Config.BuyLucky ~= nil and Config.BuyLucky or true
 local AutoSell = Config.AutoSell ~= nil and Config.AutoSell or true
 local SellItems = Config.SellItems or {}
 local Money = nil
+
+local MAX_LUCKY_ARROWS = 10
+pcall(function()
+    if MarketplaceService:UserOwnsGamePassAsync(Player.UserId, 14597778) then
+        MAX_LUCKY_ARROWS = 20
+    end
+end)
 
 local ForceKeep = {
     ["Lucky Arrow"] = true,
@@ -228,7 +235,7 @@ local function ShouldBuyLuckyArrow()
     if not UpdateMoneyRef() then return false end
     if BuyLucky ~= true then return false end
     if Money.Value < 75000 then return false end
-    if GetLuckyArrowCount() >= 9 then return false end
+    if GetLuckyArrowCount() >= MAX_LUCKY_ARROWS then return false end
     return true
 end
 
@@ -255,4 +262,5 @@ return {
     AttemptBuyLuckyBeforeHop = AttemptBuyLuckyBeforeHop,
     ShouldSellItem = ShouldSellItem,
     CountSellable = CountSellable,
+    MAX_LUCKY_ARROWS = MAX_LUCKY_ARROWS,
 }
